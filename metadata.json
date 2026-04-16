@@ -1,0 +1,6 @@
+{
+  "name": "Thông tin theo dõi công tác giảm TTĐN TBA cc",
+  "description": "Ứng dụng cập nhật và hiển thị dữ liệu trạm từ Google Sheets với chức năng lọc và sắp xếp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
