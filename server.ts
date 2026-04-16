@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -23,10 +22,22 @@ app.use((req, res, next) => {
 // Google Sheets Auth Helper
 const getSheetsClient = () => {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY;
   
+  if (privateKey) {
+    // Handle cases where Vercel might add extra quotes or escape characters
+    privateKey = privateKey.replace(/^"|"$/g, '').replace(/\\n/g, "\n");
+  }
+  
+  console.log("Diagnostic - Auth Check:", {
+    hasEmail: !!email,
+    hasKey: !!privateKey,
+    keyStart: privateKey?.substring(0, 20),
+    emailMatch: email === "minhdlst@gmail.com" ? "Warning: Using user email instead of service account email?" : "Check passed"
+  });
+
   if (!email || !privateKey) {
-    throw new Error("Google Service Account credentials missing. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.");
+    throw new Error("Google Service Account credentials missing. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY (ensure newlines are handled).");
   }
 
   const auth = new google.auth.JWT({
@@ -113,7 +124,8 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    const { createServer } = await import("vite");
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
