@@ -48,6 +48,28 @@ import { Calendar } from "@/components/ui/calendar";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer, 
+  Cell,
+  PieChart,
+  Pie
+} from "recharts";
+
+const STATUS_COLORS: Record<string, string> = {
+  "Dự kiến đạt kế hoạch cao": "#10b981",
+  "Dự kiến đạt kế hoạch": "#3b82f6",
+  "Khả năng đạt kế hoạch ở mức trung bình": "#f59e0b",
+  "Khả năng đạt kế hoạch ở mức thấp": "#f97316",
+  "Khả năng không đạt kế hoạch": "#ef4444",
+  "Thiếu dữ liệu để đánh giá": "#94a3b8"
+};
 
 const normalizeString = (s: string) => {
   if (!s) return "";
@@ -66,6 +88,8 @@ export default function App() {
   const [dataSheet, setDataSheet] = useState<SheetData>([]);
   const [capNhatSheet, setCapNhatSheet] = useState<SheetData>([]);
   const [thuVienSheet, setThuVienSheet] = useState<SheetData>([]);
+  const [tongHopSheet, setTongHopSheet] = useState<SheetData>([]);
+  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke">("cap-nhat");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,12 +108,22 @@ export default function App() {
   const [filterDataTenTram, setFilterDataTenTram] = useState("all");
   const [filterDonVi, setFilterDonVi] = useState("all");
 
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({
+    from: undefined,
+    to: undefined,
+  });
+
   // Searchable Select state
   const [openTenTram, setOpenTenTram] = useState(false);
   const [openFilterCapNhat, setOpenFilterCapNhat] = useState(false);
   const [openFilterData, setOpenFilterData] = useState(false);
   const [openFilterDonVi, setOpenFilterDonVi] = useState(false);
   const [openDienLuc, setOpenDienLuc] = useState(false);
+  const [selectedDienLucThongKe, setSelectedDienLucThongKe] = useState("all");
+  const [openDienLucThongKe, setOpenDienLucThongKe] = useState(false);
 
   const exportToExcel = (header: string[], data: SheetData, fileName: string) => {
     if (data.length === 0) {
@@ -117,13 +151,14 @@ export default function App() {
     try {
       // Add timestamp to bypass browser cache
       const ts = Date.now();
-      const [dataRes, capNhatRes, thuVienRes] = await Promise.all([
+      const [dataRes, capNhatRes, thuVienRes, tongHopRes] = await Promise.all([
         fetch(`/api/sheets/data?t=${ts}`),
         fetch(`/api/sheets/cap-nhat?t=${ts}`),
-        fetch(`/api/sheets/thu-vien?t=${ts}`)
+        fetch(`/api/sheets/thu-vien?t=${ts}`),
+        fetch(`/api/sheets/tong-hop?t=${ts}`)
       ]);
 
-      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok) {
+      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok) {
         const dataErr = await dataRes.json();
         throw new Error(dataErr.error || "Failed to fetch data from sheets");
       }
@@ -131,16 +166,19 @@ export default function App() {
       const data = await dataRes.json();
       const capNhat = await capNhatRes.json();
       const thuVien = await thuVienRes.json();
+      const tongHop = await tongHopRes.json();
 
       console.log("Data fetched:", { 
         dataRows: data.length, 
         capNhatRows: capNhat.length, 
-        thuVienRows: thuVien.length 
+        thuVienRows: thuVien.length,
+        tongHopRows: tongHop.length
       });
 
       setDataSheet(data);
       setCapNhatSheet(capNhat);
       setThuVienSheet(thuVien);
+      setTongHopSheet(tongHop);
       setLastSync(new Date());
       
       if (ts) {
@@ -316,12 +354,263 @@ export default function App() {
     return Array.from(
       new Set(
         result
-          .map(row => row[info.indexTenTram])
+          .map(row => String(row[info.indexTenTram] || ""))
           .filter(Boolean)
           .map(s => s.trim())
       )
-    ).sort();
+    ).sort() as string[];
   }, [thuVienSheet, dataSheet, dienLuc]);
+
+  const [selectedStationTongHop, setSelectedStationTongHop] = useState("");
+  const [selectedDienLucTongHop, setSelectedDienLucTongHop] = useState("all");
+  const [openSearchTongHop, setOpenSearchTongHop] = useState(false);
+  const [openDienLucTongHop, setOpenDienLucTongHop] = useState(false);
+
+  const donViOptionsTongHop = useMemo(() => {
+    if (tongHopSheet.length < 2) return [];
+    
+    // Find header row (search first 5 rows)
+    let headerIndex = -1;
+    let indexDienLuc = -1;
+
+    for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
+      const normalizedRow = tongHopSheet[i].map(h => normalizeString(String(h || "")));
+      const idx = normalizedRow.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+      if (idx !== -1) {
+        headerIndex = i;
+        indexDienLuc = idx;
+        break;
+      }
+    }
+    
+    if (indexDienLuc === -1) return [];
+    
+    const result = tongHopSheet.slice(headerIndex + 1);
+    return Array.from(new Set(result.map(row => String(row[indexDienLuc] || "")).filter(Boolean))).sort() as string[];
+  }, [tongHopSheet]);
+
+  const stationNamesTongHop = useMemo(() => {
+    if (tongHopSheet.length < 2) return [];
+    
+    // Find header row (search first 5 rows)
+    let headerIndex = -1;
+    let indexTenTram = -1;
+    let indexDienLuc = -1;
+
+    for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
+      const normalizedRow = tongHopSheet[i].map(h => normalizeString(String(h || "")));
+      const idxTram = normalizedRow.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
+      const idxDonVi = normalizedRow.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+      
+      if (idxTram !== -1) {
+        headerIndex = i;
+        indexTenTram = idxTram;
+        indexDienLuc = idxDonVi;
+        break;
+      }
+    }
+
+    if (indexTenTram === -1) return [];
+
+    let result = tongHopSheet.slice(headerIndex + 1);
+    if (selectedDienLucTongHop !== "all" && indexDienLuc !== -1) {
+      const normalizedDL = normalizeString(selectedDienLucTongHop);
+      result = result.filter(row => {
+        const val = row[indexDienLuc];
+        return val && normalizeString(val) === normalizedDL;
+      });
+    }
+
+    return Array.from(
+      new Set(
+        result
+          .map(row => String(row[indexTenTram] || ""))
+          .filter(Boolean)
+          .map(s => s.trim())
+      )
+    ).sort() as string[];
+  }, [tongHopSheet, selectedDienLucTongHop]);
+
+  const filteredTongHopData = useMemo(() => {
+    if (tongHopSheet.length < 2) return [];
+    
+    let headerIndex = -1;
+    let indexDienLuc = -1;
+
+    for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
+      const normalizedRow = tongHopSheet[i].map(h => normalizeString(String(h || "")));
+      const idx = normalizedRow.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+      if (idx !== -1) {
+        headerIndex = i;
+        indexDienLuc = idx;
+        break;
+      }
+    }
+    
+    let result = tongHopSheet.slice(headerIndex + 1);
+    if (selectedDienLucTongHop !== "all" && indexDienLuc !== -1) {
+      const normalizedDL = normalizeString(selectedDienLucTongHop);
+      result = result.filter(row => {
+        const val = row[indexDienLuc];
+        return val && normalizeString(val) === normalizedDL;
+      });
+    }
+    return result;
+  }, [tongHopSheet, selectedDienLucTongHop]);
+
+  const tongHopDetail = useMemo(() => {
+    if (!selectedStationTongHop || tongHopSheet.length < 2) return null;
+    
+    const header = tongHopSheet[0];
+    const normHeader = header.map(h => normalizeString(String(h || "")));
+    const idxTram = normHeader.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
+    
+    if (idxTram === -1) return null;
+    
+    const row = tongHopSheet.slice(1).find(r => r[idxTram] === selectedStationTongHop);
+    if (!row) return null;
+
+    const getAssessment = (val: any) => {
+      const num = parseFloat(String(val).replace(/,/g, '.'));
+      if (isNaN(num)) return "Thiếu dữ liệu để đánh giá";
+      if (num >= 100) return "Dự kiến đạt kế hoạch cao";
+      if (num >= 95) return "Dự kiến đạt kế hoạch";
+      if (num >= 90) return "Khả năng đạt kế hoạch ở mức trung bình";
+      if (num >= 70) return "Khả năng đạt kế hoạch ở mức thấp";
+      return "Khả năng không đạt kế hoạch";
+    };
+
+    // Columns: A=0, B=1, ..., V=21, W=22
+    // Group 1: B-H (1-7)
+    // Group 2: I-N (8-13)
+    // Group 3: W (22)
+    // Group 4: O-V (14-21)
+    
+    const getGroup = (indices: number[]) => {
+      return indices.map(i => ({
+        label: header[i] || `Cột ${String.fromCharCode(65 + i)}`,
+        value: row[i] || ""
+      }));
+    };
+
+    const assessment = getAssessment(row[21]); // Column V is index 21
+
+    return {
+      group1: getGroup([1, 2, 3, 4, 5, 6, 7]),
+      group2: getGroup([8, 9, 10, 11, 12, 13]),
+      group3: getGroup([22]),
+      group4: getGroup([14, 15, 16, 17, 18, 19, 20, 21]),
+      assessment
+    };
+  }, [tongHopSheet, selectedStationTongHop]);
+
+  const statisticsData = useMemo(() => {
+    if (tongHopSheet.length < 2) return [];
+    
+    // Find header indices
+    let headerIndex = -1;
+    let idxTram = -1;
+    let idxDL = -1;
+    let idxDanhGia = 21; // Default index for assessment
+
+    for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
+      const row = tongHopSheet[i];
+      if (!row || !Array.isArray(row)) continue;
+      const normHeader = row.map(h => normalizeString(String(h || "")));
+      const t = normHeader.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
+      const dl = normHeader.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+      if (t !== -1) {
+        headerIndex = i;
+        idxTram = t;
+        idxDL = dl;
+        break;
+      }
+    }
+
+    if (idxTram === -1 || idxDL === -1) return [];
+
+    const rows = tongHopSheet.slice(headerIndex + 1);
+    const companies = Array.from(new Set(rows.map(r => r[idxDL]).filter(Boolean).map(s => s.trim()))).sort();
+    
+    const getAssessment = (val: any) => {
+      const num = parseFloat(String(val).replace(/,/g, '.'));
+      if (isNaN(num)) return "Thiếu dữ liệu để đánh giá";
+      if (num >= 100) return "Dự kiến đạt kế hoạch cao";
+      if (num >= 95) return "Dự kiến đạt kế hoạch";
+      if (num >= 90) return "Khả năng đạt kế hoạch ở mức trung bình";
+      if (num >= 70) return "Khả năng đạt kế hoạch ở mức thấp";
+      return "Khả năng không đạt kế hoạch";
+    };
+
+    // Prepare stations from capNhatSheet for checking "implemented"
+    const implementedStations = new Set();
+    if (capNhatSheet.length > 1) {
+      const cnHeader = capNhatSheet[0].map(h => normalizeString(String(h || "")));
+      const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm"));
+      if (cnIdxTram !== -1) {
+        capNhatSheet.slice(1).forEach(r => {
+          if (r[cnIdxTram]) implementedStations.add(r[cnIdxTram].trim());
+        });
+      }
+    }
+
+    const stats = companies.map(company => {
+      const companyRows = rows.filter(r => r[idxDL] && r[idxDL].trim() === company);
+      const totalStations = companyRows.length;
+      
+      const implementedCount = companyRows.filter(r => r[idxTram] && implementedStations.has(r[idxTram].trim())).length;
+      
+      const counts = {
+        "Dự kiến đạt kế hoạch cao": 0,
+        "Dự kiến đạt kế hoạch": 0,
+        "Khả năng đạt kế hoạch ở mức trung bình": 0,
+        "Khả năng đạt kế hoạch ở mức thấp": 0,
+        "Khả năng không đạt kế hoạch": 0,
+        "Thiếu dữ liệu để đánh giá": 0
+      };
+
+      companyRows.forEach(r => {
+        const status = getAssessment(r[idxDanhGia]);
+        if (counts.hasOwnProperty(status)) {
+          counts[status as keyof typeof counts]++;
+        }
+      });
+
+      return {
+        company,
+        totalStations,
+        implementedCount,
+        counts,
+        percentages: Object.fromEntries(
+          Object.entries(counts).map(([k, v]) => [k, totalStations > 0 ? (v / totalStations) * 100 : 0])
+        )
+      };
+    });
+
+    // Company Total
+    const totals = {
+      "Dự kiến đạt kế hoạch cao": stats.reduce((acc, curr) => acc + curr.counts["Dự kiến đạt kế hoạch cao"], 0),
+      "Dự kiến đạt kế hoạch": stats.reduce((acc, curr) => acc + curr.counts["Dự kiến đạt kế hoạch"], 0),
+      "Khả năng đạt kế hoạch ở mức trung bình": stats.reduce((acc, curr) => acc + curr.counts["Khả năng đạt kế hoạch ở mức trung bình"], 0),
+      "Khả năng đạt kế hoạch ở mức thấp": stats.reduce((acc, curr) => acc + curr.counts["Khả năng đạt kế hoạch ở mức thấp"], 0),
+      "Khả năng không đạt kế hoạch": stats.reduce((acc, curr) => acc + curr.counts["Khả năng không đạt kế hoạch"], 0),
+      "Thiếu dữ liệu để đánh giá": stats.reduce((acc, curr) => acc + curr.counts["Thiếu dữ liệu để đánh giá"], 0)
+    };
+
+    const totalStationsAll = stats.reduce((acc, curr) => acc + curr.totalStations, 0);
+
+    const grandTotal = {
+      company: "TỔNG CỘNG",
+      totalStations: totalStationsAll,
+      implementedCount: stats.reduce((acc, curr) => acc + curr.implementedCount, 0),
+      counts: totals,
+      percentages: Object.fromEntries(
+        Object.entries(totals).map(([k, v]) => [k, totalStationsAll > 0 ? (v / totalStationsAll) * 100 : 0])
+      )
+    };
+
+    return [...stats, grandTotal];
+  }, [tongHopSheet, capNhatSheet]);
 
   const donViOptions = useMemo(() => {
     if (dataSheet.length < 2) return [];
@@ -336,6 +625,7 @@ export default function App() {
     const header = capNhatSheet[0].map(h => normalizeString(String(h || "")));
     const indexTenTram = header.indexOf(normalizeString("tên trạm"));
     const indexDienLuc = header.indexOf(normalizeString("điện lực"));
+    const indexNgayThucHien = header.indexOf(normalizeString("ngày thực hiện"));
     
     let result = capNhatSheet.slice(1).filter(row => {
       if (!row || row.length === 0) return false;
@@ -351,9 +641,24 @@ export default function App() {
     if (filterTenTram !== "all" && indexTenTram !== -1) {
       result = result.filter(row => row[indexTenTram] === filterTenTram);
     }
+
+    // Date range filtering
+    if (indexNgayThucHien !== -1 && (dateRange.from || dateRange.to)) {
+      result = result.filter(row => {
+        const dateStr = row[indexNgayThucHien];
+        if (!dateStr) return false;
+        const rowDate = new Date(dateStr);
+        if (isNaN(rowDate.getTime())) return true; // Keep if invalid date to avoid losing data? Or hide it? Let's hide it.
+        
+        if (dateRange.from && rowDate < new Date(dateRange.from.setHours(0, 0, 0, 0))) return false;
+        if (dateRange.to && rowDate > new Date(dateRange.to.setHours(23, 59, 59, 999))) return false;
+        
+        return true;
+      });
+    }
     
     return result;
-  }, [capNhatSheet, filterTenTram, dienLuc]);
+  }, [capNhatSheet, filterTenTram, dienLuc, dateRange]);
 
   const filteredDataSheet = useMemo(() => {
     if (dataSheet.length < 2) return [];
@@ -427,15 +732,60 @@ export default function App() {
       <Toaster position="top-right" richColors />
       
       {/* Top Bar */}
-      <header className="bg-gradient-to-r from-[#1a73e8] to-[#0d47a1] border-b border-primary/20 h-[64px] flex items-center justify-between px-6 flex-shrink-0 shadow-md z-20">
-        <div className="flex items-center gap-3">
-          <div className="bg-white/10 p-2 rounded-lg backdrop-blur-sm">
-            <Database className="text-white w-6 h-6" />
+      <header className="bg-gradient-to-r from-[#1a73e8] to-[#0d47a1] border-b border-primary/20 flex flex-col md:h-[64px] md:flex-row md:items-center md:justify-between px-4 sm:px-6 py-3 md:py-0 flex-shrink-0 shadow-md z-20 gap-2 md:gap-4">
+        <div className="flex items-center justify-between md:justify-start gap-3 overflow-hidden w-full md:w-auto">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="bg-white/10 p-1.5 rounded-lg backdrop-blur-sm shrink-0">
+              <Database className="text-white w-5 h-5 md:w-6 md:h-6" />
+            </div>
+            <h1 className="font-bold text-[14px] sm:text-[16px] md:text-[20px] text-white tracking-tight uppercase drop-shadow-sm whitespace-nowrap overflow-hidden text-ellipsis">Quản lý TTĐN TBA công cộng - QNPC</h1>
           </div>
-          <h1 className="font-bold text-[20px] text-white tracking-tight uppercase drop-shadow-sm">Quản lý TTĐN TBA công cộng - QNPC</h1>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={fetchData} 
+            disabled={loading}
+            className="md:hidden text-white hover:bg-white/10 h-8 px-3 border border-white/20 rounded-full transition-all shrink-0"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+          </Button>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex flex-col items-end hidden md:flex">
+
+        <div className="flex items-center justify-center md:flex-1">
+          <div className="flex bg-white/15 p-1 rounded-lg w-full sm:w-auto max-w-[280px] sm:max-w-none">
+            <button 
+              onClick={() => setActiveTab("cap-nhat")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all",
+                activeTab === "cap-nhat" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Cập nhật
+            </button>
+            <button 
+              onClick={() => setActiveTab("tong-hop")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all",
+                activeTab === "tong-hop" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Truy vấn
+            </button>
+            <button 
+              onClick={() => setActiveTab("thong-ke")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all",
+                activeTab === "thong-ke" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Thống kê
+            </button>
+          </div>
+        </div>
+
+        <div className="hidden md:flex items-center gap-4">
+          <div className="flex flex-col items-end shrink-0">
             <div className="text-[12px] text-white/80 font-medium">Chuyên viên theo dõi: Đặng Xuân Duy - Phòng kỹ thuật</div>
             {lastSync && (
               <div className="text-[10px] text-white/60">Cập nhật lúc: {format(lastSync, "HH:mm:ss dd/MM")}</div>
@@ -455,8 +805,10 @@ export default function App() {
       </header>
 
       <main className="flex-1 flex flex-col md:flex-row p-4 gap-4 overflow-hidden">
-        {/* Form Panel */}
-        <section className="w-full md:w-[300px] flex-shrink-0">
+        {activeTab === "cap-nhat" ? (
+          <>
+            {/* Form Panel */}
+            <section className="w-full md:w-[300px] flex-shrink-0">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -694,6 +1046,57 @@ export default function App() {
                     <Download className="w-3.5 h-3.5 mr-1.5" />
                     Xuất Excel
                   </Button>
+
+                  <Popover>
+                    <PopoverTrigger 
+                      render={
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "h-8 text-[12px] bg-white border-border justify-start font-normal min-w-[200px]",
+                            !dateRange.from && "text-[#5f6368]"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-3 w-3" />
+                          {dateRange.from ? (
+                            dateRange.to ? (
+                              <>
+                                {format(dateRange.from, "dd/MM/yyyy")} - {format(dateRange.to, "dd/MM/yyyy")}
+                              </>
+                            ) : (
+                              format(dateRange.from, "dd/MM/yyyy")
+                            )
+                          ) : (
+                            <span>Lọc Ngày thực hiện...</span>
+                          )}
+                        </Button>
+                      }
+                    />
+                    <PopoverContent className="w-auto p-0 bg-white shadow-xl border-border" align="end">
+                      <Calendar
+                        initialFocus
+                        mode="range"
+                        defaultMonth={dateRange.from}
+                        selected={dateRange}
+                        onSelect={(range: any) => setDateRange(range || { from: undefined, to: undefined })}
+                        numberOfMonths={1}
+                        locale={vi}
+                      />
+                      {(dateRange.from || dateRange.to) && (
+                        <div className="p-2 border-t border-border flex justify-end">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-7 text-[11px] hover:bg-slate-100"
+                            onClick={() => setDateRange({ from: undefined, to: undefined })}
+                          >
+                            Xóa lọc
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
                   <Popover open={openFilterCapNhat} onOpenChange={setOpenFilterCapNhat}>
                     <PopoverTrigger 
                       render={
@@ -821,7 +1224,7 @@ export default function App() {
             <Card className="h-full shadow-sm border-border rounded-lg overflow-hidden flex flex-col">
               <CardHeader className="flex flex-row items-center justify-between py-3 px-4 bg-[#fafafa] border-b border-border space-y-0">
                 <CardTitle className="text-[14px] font-bold text-[#3c4043]">
-                  Dữ liệu tổng hợp
+                  Chi tiết kế hoạch giảm TTĐN của Điện lực
                 </CardTitle>
                 <div className="flex items-center gap-3">
                   <div className="text-[11px] font-medium text-[#5f6368] bg-slate-100 px-2 py-1 rounded">
@@ -837,57 +1240,6 @@ export default function App() {
                     Xuất Excel
                   </Button>
                   
-                  {/* Filter Don Vi */}
-                  <Popover open={openFilterDonVi} onOpenChange={setOpenFilterDonVi}>
-                    <PopoverTrigger 
-                      render={
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          className="w-[150px] h-8 text-[12px] bg-white border-border justify-between"
-                        >
-                          {filterDonVi === "all" ? "Lọc Đơn vị" : filterDonVi}
-                          <ChevronDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
-                        </Button>
-                      }
-                    />
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" align="end">
-                      <Command>
-                        <CommandInput placeholder="Tìm đơn vị..." className="h-8 text-[12px]" />
-                        <CommandList>
-                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              value="all"
-                              onSelect={() => {
-                                setFilterDonVi("all");
-                                setOpenFilterDonVi(false);
-                              }}
-                              className="text-[12px] cursor-pointer"
-                            >
-                              <Check className={cn("mr-2 h-3 w-3", filterDonVi === "all" ? "opacity-100" : "opacity-0")} />
-                              Tất cả đơn vị
-                            </CommandItem>
-                            {donViOptions.map((name) => (
-                              <CommandItem
-                                key={name}
-                                value={name}
-                                onSelect={(val) => {
-                                  setFilterDonVi(val);
-                                  setOpenFilterDonVi(false);
-                                }}
-                                className="text-[12px] cursor-pointer"
-                              >
-                                <Check className={cn("mr-2 h-3 w-3", filterDonVi === name ? "opacity-100" : "opacity-0")} />
-                                {name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-
                   {/* Filter Ten Tram */}
                   <Popover open={openFilterData} onOpenChange={setOpenFilterData}>
                     <PopoverTrigger 
@@ -991,7 +1343,476 @@ export default function App() {
             </Card>
           </motion.div>
         </section>
-      </main>
+      </>
+    ) : activeTab === "tong-hop" ? (
+      /* NEW: Tong Hop View */
+      <section className="flex-1 flex flex-col gap-4 overflow-hidden w-full">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex-none"
+        >
+          <Card className="shadow-sm border-border">
+            <CardHeader className="py-4">
+              <CardTitle className="text-[16px] font-bold">Kết quả thực hiện từng trạm</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Label className="whitespace-nowrap font-bold text-[#1a73e8]">Điện lực:</Label>
+                  <Popover open={openDienLucTongHop} onOpenChange={setOpenDienLucTongHop}>
+                    <PopoverTrigger 
+                      render={
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openDienLucTongHop}
+                          className="w-[200px] h-10 justify-between bg-white border-border text-[13px]"
+                        >
+                          {selectedDienLucTongHop === "all" ? "Tất cả điện lực" : selectedDienLucTongHop}
+                          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent className="w-[200px] p-0 bg-white shadow-xl z-[100]">
+                      <Command>
+                        <CommandInput placeholder="Tìm điện lực..." className="h-9" />
+                        <CommandList>
+                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="all"
+                              onSelect={() => {
+                                setSelectedDienLucTongHop("all");
+                                setSelectedStationTongHop("");
+                                setOpenDienLucTongHop(false);
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", selectedDienLucTongHop === "all" ? "opacity-100" : "opacity-0")} />
+                              Tất cả điện lực
+                            </CommandItem>
+                            {donViOptionsTongHop.map((name) => (
+                              <CommandItem
+                                key={name}
+                                value={name}
+                                onSelect={() => {
+                                  setSelectedDienLucTongHop(name);
+                                  setSelectedStationTongHop("");
+                                  setOpenDienLucTongHop(false);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <Check className={cn("mr-2 h-4 w-4", selectedDienLucTongHop === name ? "opacity-100" : "opacity-0")} />
+                                {name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label className="whitespace-nowrap font-bold text-[#1a73e8]">Chọn trạm:</Label>
+                  <Popover open={openSearchTongHop} onOpenChange={setOpenSearchTongHop}>
+                    <PopoverTrigger 
+                      render={
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openSearchTongHop}
+                          className="w-[300px] h-10 justify-between bg-white border-border text-[13px]"
+                        >
+                          {selectedStationTongHop ? selectedStationTongHop : "Tìm tên trạm..."}
+                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent className="w-[300px] p-0 bg-white shadow-xl z-[100]">
+                      <Command>
+                        <CommandInput placeholder="Gõ tên trạm..." className="h-9" />
+                        <CommandList>
+                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                          <CommandGroup>
+                            {stationNamesTongHop.map((name) => (
+                              <CommandItem
+                                key={name}
+                                value={name}
+                                onSelect={() => {
+                                  setSelectedStationTongHop(name);
+                                  setOpenSearchTongHop(false);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <Check className={cn("mr-2 h-4 w-4", selectedStationTongHop === name ? "opacity-100" : "opacity-0")} />
+                                {name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {tongHopDetail ? (
+                <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                  {/* Assessment Card */}
+                  <div className={cn(
+                    "p-4 rounded-lg border-2 flex items-center gap-4",
+                    tongHopDetail.assessment.includes("cao") ? "bg-emerald-50 border-emerald-200 text-emerald-800" :
+                    tongHopDetail.assessment.includes("đạt kế hoạch") ? "bg-blue-50 border-blue-200 text-blue-800" :
+                    tongHopDetail.assessment.includes("trung bình") ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
+                    tongHopDetail.assessment.includes("thấp") ? "bg-orange-50 border-orange-200 text-orange-800" :
+                    tongHopDetail.assessment.includes("Thiếu") ? "bg-gray-50 border-gray-200 text-gray-500" :
+                    "bg-red-50 border-red-200 text-red-800"
+                  )}>
+                    <CheckCircle2 className="h-6 w-6 shrink-0" />
+                    <div>
+                      <h3 className="font-bold text-[14px] uppercase">Đánh giá khả năng đạt kế hoạch năm</h3>
+                      <p className="font-semibold text-[16px]">{tongHopDetail.assessment}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Group 1 */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-blue-500 pl-2">Thông tin chung</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {tongHopDetail.group1.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Group 2 */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-emerald-500 pl-2">Kế hoạch của Điện lực</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {tongHopDetail.group2.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Group 4 (Infrastructure/Plan) before Group 3 (Other) */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-orange-500 pl-2">Kết quả thực hiện TTĐN lũy kế và đánh giá</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {tongHopDetail.group4.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900 font-mono">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Group 3 */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-purple-500 pl-2">Triển khai công tác</h4>
+                      <div className="grid grid-cols-1 gap-3">
+                        {tongHopDetail.group3.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-20 text-slate-400 italic bg-white border-2 border-dashed rounded-lg">
+                  Vui lòng chọn Điện lực và Tên trạm để xem đánh giá chi tiết
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="flex-1 overflow-hidden"
+        >
+          <Card className="h-full shadow-sm border-border flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-3 px-4 bg-[#fafafa] border-b space-y-0">
+              <CardTitle className="text-[14px] font-bold text-[#3c4043]">Danh sách kết quả thực hiện</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-[12px] text-emerald-600 border-emerald-200"
+                onClick={() => exportToExcel(tongHopSheet[0] || [], filteredTongHopData, "Sheet_Tong_Hop")}
+              >
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                Xuất Excel
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 overflow-auto relative max-h-[600px]">
+              <table className="w-full caption-bottom text-[12px] border-separate border-spacing-0">
+                <TableHeader className="sticky top-0 z-20 shadow-sm">
+                  <TableRow className="hover:bg-transparent bg-[#f1f3f4]">
+                    {tongHopSheet[0]?.map((header, i) => (
+                      <TableHead key={i} className="h-10 font-bold px-4 border-b border-border text-[#3c4043] whitespace-nowrap bg-[#f1f3f4] sticky top-0 z-20">{header}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTongHopData.map((row, i) => (
+                    <TableRow key={i} className="hover:bg-blue-50/50 border-b border-border transition-colors">
+                      {row.map((cell, j) => (
+                        <TableCell key={j} className="px-4 py-2 border-b border-border text-[12px] whitespace-normal min-w-[120px] max-w-[400px] break-words">
+                          {cell}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </table>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </section>
+    ) : (
+      <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full">
+        {/* Statistics Filters */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg shadow-sm border border-border"
+        >
+          <div className="flex items-center gap-2">
+            <Label className="whitespace-nowrap font-bold text-[#1a73e8]">Chọn đơn vị thống kê:</Label>
+            <Popover open={openDienLucThongKe} onOpenChange={setOpenDienLucThongKe}>
+              <PopoverTrigger 
+                render={
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="w-[250px] h-10 justify-between bg-white border-border text-[13px] font-semibold"
+                  >
+                    {selectedDienLucThongKe === "all" ? "Toàn Công ty" : selectedDienLucThongKe}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                }
+              />
+              <PopoverContent className="w-[250px] p-0 bg-white shadow-xl z-[100]">
+                <Command>
+                  <CommandInput placeholder="Tìm đơn vị..." className="h-9" />
+                  <CommandList>
+                    <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="all"
+                        onSelect={() => {
+                          setSelectedDienLucThongKe("all");
+                          setOpenDienLucThongKe(false);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", selectedDienLucThongKe === "all" ? "opacity-100" : "opacity-0")} />
+                        Toàn Công ty
+                      </CommandItem>
+                      {donViOptionsTongHop.map((name) => (
+                        <CommandItem
+                          key={name}
+                          value={name}
+                          onSelect={() => {
+                            setSelectedDienLucThongKe(name);
+                            setOpenDienLucThongKe(false);
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", selectedDienLucThongKe === name ? "opacity-100" : "opacity-0")} />
+                          {name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4 }}
+          className="grid grid-cols-1 xl:grid-cols-3 gap-6"
+        >
+          {/* Table Summary */}
+          <Card className="xl:col-span-3 shadow-sm border-border bg-white">
+            <CardHeader className="bg-slate-50 border-b border-border py-4">
+              <CardTitle className="text-[16px] font-bold text-slate-800 flex items-center gap-2">
+                <TableIcon className="w-5 h-5 text-[#1a73e8]" />
+                Thống kê kết quả thực hiện {selectedDienLucThongKe === "all" ? "theo Điện lực" : `- ${selectedDienLucThongKe}`}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 overflow-hidden flex flex-col h-[600px]">
+              <div className="overflow-auto relative flex-1">
+                <Table className="border-separate border-spacing-0">
+                  <TableHeader className="sticky top-0 z-30 shadow-sm bg-slate-50">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="font-bold text-slate-700 min-w-[150px] sticky left-0 top-0 bg-slate-50 z-40 border-b border-border">Điện lực</TableHead>
+                      <TableHead className="text-center font-bold text-slate-700 sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[11px]">Tổng số trạm</TableHead>
+                      <TableHead className="text-center font-bold text-slate-700 sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[11px]">Đã thực hiện</TableHead>
+                      {Object.keys(STATUS_COLORS).map(status => (
+                        <TableHead key={status} className="text-center font-bold text-slate-700 min-w-[100px] sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[11px]">
+                          {status}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {statisticsData
+                      .filter(s => selectedDienLucThongKe === "all" || s.company === selectedDienLucThongKe || s.company === "TỔNG CỘNG")
+                      .map((stat, idx) => (
+                      <TableRow key={idx} className={cn(
+                        "hover:bg-slate-50 transition-colors",
+                        stat.company === "TỔNG CỘNG" ? "bg-slate-100 font-bold border-t-2 border-slate-300" : ""
+                      )}>
+                        <TableCell className="font-medium sticky left-0 bg-white group-hover:bg-slate-50">{stat.company}</TableCell>
+                        <TableCell className="text-center font-semibold">{stat.totalStations}</TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex flex-col items-center">
+                            <span className="font-semibold text-emerald-600">{stat.implementedCount}</span>
+                            <span className="text-[10px] text-slate-400">({stat.totalStations > 0 ? (stat.implementedCount / stat.totalStations * 100).toFixed(1) : 0}%)</span>
+                          </div>
+                        </TableCell>
+                        {Object.keys(STATUS_COLORS).map(status => (
+                          <TableCell key={status} className="text-center">
+                            <div className="flex flex-col items-center">
+                              <span className="font-semibold" style={{ color: STATUS_COLORS[status] }}>
+                                {stat.counts[status as keyof typeof stat.counts]}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                ({stat.percentages[status].toFixed(1)}%)
+                              </span>
+                            </div>
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Charts section */}
+          <Card className="xl:col-span-2 shadow-sm border-border bg-white flex flex-col h-[500px]">
+            <CardHeader className="py-4 border-b border-border">
+              <CardTitle className="text-[16px] font-bold">Biểu đồ phân bố kết quả theo Điện lực</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={statisticsData.filter(s => s.company !== "TỔNG CỘNG" && (selectedDienLucThongKe === "all" || s.company === selectedDienLucThongKe))}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="company" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    interval={0} 
+                    height={80}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                  />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    cursor={{ fill: '#f8fafc' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                  {Object.keys(STATUS_COLORS).map(status => (
+                    <Bar 
+                      key={status}
+                      name={status}
+                      dataKey={`counts.${status}`} 
+                      stackId="a" 
+                      fill={STATUS_COLORS[status]} 
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-border bg-white flex flex-col h-[500px]">
+            <CardHeader className="py-4 border-b border-border">
+              <CardTitle className="text-[16px] font-bold">
+                Cơ cấu đánh giá {selectedDienLucThongKe === "all" ? "toàn Công ty" : `- ${selectedDienLucThongKe}`}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 flex flex-col items-center justify-between flex-1">
+              <div className="h-[280px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={Object.entries(
+                        (selectedDienLucThongKe === "all" 
+                          ? statisticsData.find(s => s.company === "TỔNG CỘNG") 
+                          : statisticsData.find(s => s.company === selectedDienLucThongKe)
+                        )?.counts || {}
+                      ).map(([name, value]) => ({ name, value }))}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={90}
+                      paddingAngle={5}
+                      dataKey="value"
+                      label={({ name, value }) => value > 0 ? `${value}` : ""}
+                    >
+                      {Object.keys(STATUS_COLORS).map((status, index) => (
+                        <Cell key={`cell-${index}`} fill={STATUS_COLORS[status]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    />
+                    <Legend layout="horizontal" align="center" verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="grid grid-cols-2 gap-4 w-full pt-4 border-t border-slate-100">
+                <div className="p-3 bg-blue-50 rounded-lg text-center">
+                  <p className="text-[11px] text-blue-600 font-bold uppercase tracking-wider">Tổng số trạm</p>
+                  <p className="text-[20px] font-bold text-blue-900 mt-1">
+                    {(selectedDienLucThongKe === "all" 
+                      ? statisticsData.find(s => s.company === "TỔNG CỘNG") 
+                      : statisticsData.find(s => s.company === selectedDienLucThongKe)
+                    )?.totalStations || 0}
+                  </p>
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-lg text-center">
+                  <p className="text-[11px] text-emerald-600 font-bold uppercase tracking-wider">Đã thực hiện</p>
+                  <p className="text-[20px] font-bold text-emerald-900 mt-1">
+                    {(selectedDienLucThongKe === "all" 
+                      ? statisticsData.find(s => s.company === "TỔNG CỘNG") 
+                      : statisticsData.find(s => s.company === selectedDienLucThongKe)
+                    )?.implementedCount || 0}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </section>
+    )}
+  </main>
     </div>
   );
 }

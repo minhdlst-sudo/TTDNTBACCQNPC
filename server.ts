@@ -98,6 +98,22 @@ app.get("/api/sheets/thu-vien", async (req, res) => {
   }
 });
 
+app.get("/api/sheets/tong-hop", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "'Tong hop'!A:AZ", // Range adjusted to cover potential many columns
+    });
+    const values = response.data.values || [];
+    console.log(`Fetched ${values.length} rows from 'Tong hop' sheet at ${new Date().toISOString()}`);
+    res.json(values);
+  } catch (error: any) {
+    console.error("Error fetching 'Tong hop' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/sheets/cap-nhat", async (req, res) => {
   try {
     const sheets = getSheetsClient();
