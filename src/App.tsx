@@ -858,7 +858,7 @@ export default function App() {
 
         <div className="hidden md:flex items-center gap-4">
           <div className="flex flex-col items-end shrink-0">
-            <div className="text-[12px] text-white/80 font-medium">Chuyên viên theo dõi: Đặng Xuân Duy - Phòng kỹ thuật</div>
+            <div className="text-[12px] text-white/80 font-medium">Theo dõi: Đặng Xuân Duy - PKT</div>
             {lastSync && (
               <div className="text-[10px] text-white/60">Cập nhật lúc: {format(lastSync, "HH:mm:ss dd/MM")}</div>
             )}
