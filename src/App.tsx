@@ -22,11 +22,21 @@ import {
   Database,
   Search,
   Check,
-  Download
+  Download,
+  Info,
+  HelpCircle
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Command,
   CommandEmpty,
@@ -141,6 +151,37 @@ export default function App() {
       console.error("Export error:", err);
       toast.error("Lỗi khi xuất file Excel");
     }
+  };
+
+  const exportStatisticsToExcel = () => {
+    const statuses = Object.keys(STATUS_COLORS);
+    const header = [
+      "Điện lực",
+      "Tổng số trạm",
+      "Đã thực hiện",
+      "Tỷ lệ thực hiện (%)",
+      ...statuses.flatMap(s => [s, `Tỷ lệ ${s} (%)`]),
+      "Điểm hiệu quả"
+    ];
+
+    const dataRows = statisticsData
+      .filter(s => selectedDienLucThongKe === "all" || s.company === selectedDienLucThongKe || s.company === "TỔNG CỘNG")
+      .map(stat => {
+        const row = [
+          stat.company,
+          String(stat.totalStations),
+          String(stat.implementedCount),
+          stat.totalStations > 0 ? (stat.implementedCount / stat.totalStations * 100).toFixed(1) : "0",
+          ...statuses.flatMap(status => [
+            String(stat.counts[status as keyof typeof stat.counts]),
+            stat.percentages[status].toFixed(1)
+          ]),
+          (stat.score || 0).toFixed(2)
+        ];
+        return row;
+      });
+
+    exportToExcel(header, dataRows, "Thong_ke_TTDN");
   };
 
   const [lastSync, setLastSync] = useState<Date | null>(null);
@@ -576,14 +617,26 @@ export default function App() {
         }
       });
 
+      const implementedRate = totalStations > 0 ? (implementedCount / totalStations) * 100 : 0;
+      const percentages = Object.fromEntries(
+        Object.entries(counts).map(([k, v]) => [k, totalStations > 0 ? (v / totalStations) * 100 : 0])
+      );
+
+      const score = (implementedRate * 2) +
+                    ((percentages["Dự kiến đạt kế hoạch cao"] || 0) * 2) +
+                    ((percentages["Dự kiến đạt kế hoạch"] || 0) * 1.5) +
+                    ((percentages["Khả năng đạt kế hoạch ở mức trung bình"] || 0) * 1) +
+                    ((percentages["Khả năng đạt kế hoạch ở mức thấp"] || 0) * 0.5) -
+                    ((percentages["Khả năng không đạt kế hoạch"] || 0) * 2) -
+                    ((percentages["Thiếu dữ liệu để đánh giá"] || 0) * 1);
+
       return {
         company,
         totalStations,
         implementedCount,
         counts,
-        percentages: Object.fromEntries(
-          Object.entries(counts).map(([k, v]) => [k, totalStations > 0 ? (v / totalStations) * 100 : 0])
-        )
+        percentages,
+        score
       };
     });
 
@@ -598,19 +651,38 @@ export default function App() {
     };
 
     const totalStationsAll = stats.reduce((acc, curr) => acc + curr.totalStations, 0);
+    const totalImplementedAll = stats.reduce((acc, curr) => acc + curr.implementedCount, 0);
+    const totalImplementedRate = totalStationsAll > 0 ? (totalImplementedAll / totalStationsAll) * 100 : 0;
+
+    const totalPercentages = Object.fromEntries(
+      Object.entries(totals).map(([k, v]) => [k, totalStationsAll > 0 ? (v / totalStationsAll) * 100 : 0])
+    );
+
+    const totalScore = (totalImplementedRate * 2) +
+                       ((totalPercentages["Dự kiến đạt kế hoạch cao"] || 0) * 2) +
+                       ((totalPercentages["Dự kiến đạt kế hoạch"] || 0) * 1.5) +
+                       ((totalPercentages["Khả năng đạt kế hoạch ở mức trung bình"] || 0) * 1) +
+                       ((totalPercentages["Khả năng đạt kế hoạch ở mức thấp"] || 0) * 0.5) -
+                       ((totalPercentages["Khả năng không đạt kế hoạch"] || 0) * 2) -
+                       ((totalPercentages["Thiếu dữ liệu để đánh giá"] || 0) * 1);
 
     const grandTotal = {
       company: "TỔNG CỘNG",
       totalStations: totalStationsAll,
-      implementedCount: stats.reduce((acc, curr) => acc + curr.implementedCount, 0),
+      implementedCount: totalImplementedAll,
       counts: totals,
-      percentages: Object.fromEntries(
-        Object.entries(totals).map(([k, v]) => [k, totalStationsAll > 0 ? (v / totalStationsAll) * 100 : 0])
-      )
+      percentages: totalPercentages,
+      score: totalScore
     };
 
     return [...stats, grandTotal];
   }, [tongHopSheet, capNhatSheet]);
+
+  const scoringData = useMemo(() => {
+    return statisticsData
+      .filter(s => s.company !== "TỔNG CỘNG")
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
+  }, [statisticsData]);
 
   const donViOptions = useMemo(() => {
     if (dataSheet.length < 2) return [];
@@ -1654,11 +1726,115 @@ export default function App() {
         >
           {/* Table Summary */}
           <Card className="xl:col-span-3 shadow-sm border-border bg-white">
-            <CardHeader className="bg-slate-50 border-b border-border py-4">
+            <CardHeader className="bg-slate-50 border-b border-border py-3 px-4 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-[16px] font-bold text-slate-800 flex items-center gap-2">
                 <TableIcon className="w-5 h-5 text-[#1a73e8]" />
                 Thống kê kết quả thực hiện {selectedDienLucThongKe === "all" ? "theo Điện lực" : `- ${selectedDienLucThongKe}`}
               </CardTitle>
+              <div className="flex items-center gap-2">
+                <Dialog>
+                  <DialogTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-[12px] bg-white border-border text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5 mr-1.5" />
+                        Phương pháp tính
+                      </Button>
+                    }
+                  />
+                  <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                        <Info className="w-6 h-6 text-blue-600" />
+                        Phương pháp tính toán thống kê & chấm điểm
+                      </DialogTitle>
+                      <DialogDescription>
+                        Chi tiết về cách xác định mức đánh giá và công thức chấm điểm hiệu quả thực hiện.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6 py-4">
+                      <section className="space-y-3">
+                        <h3 className="text-lg font-bold text-slate-800 border-l-4 border-blue-600 pl-3">
+                          1. Xác định mức đánh giá khả năng thực hiện kế hoạch
+                        </h3>
+                        <p className="text-sm text-slate-600">
+                          Dựa trên giá trị dữ liệu từ danh mục tổng hợp (TTĐN), hệ thống tự động phân loại trạm theo các ngưỡng sau:
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {[
+                            { label: "Dự kiến đạt kế hoạch cao", condition: "≥ 100", color: "text-emerald-600" },
+                            { label: "Dự kiến đạt kế hoạch", condition: "95 - 100", color: "text-blue-600" },
+                            { label: "Khả năng đạt kế hoạch ở mức trung bình", condition: "90 - 95", color: "text-amber-600" },
+                            { label: "Khả năng đạt kế hoạch ở mức thấp", condition: "70 - 90", color: "text-orange-600" },
+                            { label: "Khả năng không đạt kế hoạch", condition: "< 70", color: "text-red-600" },
+                            { label: "Thiếu dữ liệu để đánh giá", condition: "Không có số liệu", color: "text-slate-400" },
+                          ].map((item, i) => (
+                            <div key={i} className="flex justify-between items-center p-2 rounded bg-slate-50 border border-slate-100 italic">
+                              <span className={cn("text-[13px] font-medium", item.color)}>{item.label}</span>
+                              <span className="text-xs font-bold text-slate-500">{item.condition}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="space-y-3">
+                        <h3 className="text-lg font-bold text-slate-800 border-l-4 border-emerald-600 pl-3">
+                          2. Xác định điểm chấm các Điện lực (Điểm hiệu quả)
+                        </h3>
+                        <p className="text-sm text-slate-600">
+                          Điểm hiệu quả của mỗi Điện lực được tính toán theo công thức trọng số dựa trên tỷ lệ (%) thực hiện và tỷ lệ các mức đánh giá:
+                        </p>
+                        <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-[13px] leading-relaxed shadow-inner overflow-x-auto">
+                          <p className="text-emerald-400 font-bold mb-2">// Công thức chấm điểm:</p>
+                          <p>Điểm = (Tỷ lệ % Đã thực hiện × 2)</p>
+                          <p className="pl-4">+ (Tỷ lệ % Dự kiến đạt kế hoạch cao × 2)</p>
+                          <p className="pl-4">+ (Tỷ lệ % Dự kiến đạt kế hoạch × 1.5)</p>
+                          <p className="pl-4">+ (Tỷ lệ % Khả năng đạt KH mức TB × 1.0)</p>
+                          <p className="pl-4">+ (Tỷ lệ % Khả năng đạt KH mức thấp × 0.5)</p>
+                          <p className="pl-4 text-red-500">- (Tỷ lệ % Khả năng không đạt KH × 2.0)</p>
+                          <p className="pl-4 text-red-500">- (Tỷ lệ % Thiếu dữ liệu đánh giá × 1.0)</p>
+                        </div>
+                        <div className="pt-2">
+                          <p className="text-[11px] text-slate-400 italic">
+                            * Ghi chú: Tỷ lệ (%) được lấy trên tổng số trạm của Điện lực đó.
+                          </p>
+                        </div>
+                      </section>
+                      
+                      <section className="space-y-3">
+                        <h3 className="text-md font-bold text-slate-800">Bảng xếp hạng & Phân loại</h3>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { label: "Xuất sắc", range: "≥ 150", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                            { label: "Tốt", range: "100 - 150", color: "bg-blue-50 text-blue-700 border-blue-200" },
+                            { label: "Trung bình", range: "50 - 100", color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+                            { label: "Cần cải thiện", range: "< 50", color: "bg-red-50 text-red-700 border-red-200" },
+                          ].map((cat, i) => (
+                            <div key={i} className={cn("text-center py-2 rounded-md border", cat.color)}>
+                              <p className="text-[11px] font-bold">{cat.label}</p>
+                              <p className="text-[10px]">{cat.range}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-[12px] bg-white border-border text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                  onClick={exportStatisticsToExcel}
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  Xuất Excel
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0 overflow-hidden flex flex-col h-[600px]">
               <div className="overflow-auto relative flex-1">
@@ -1806,6 +1982,61 @@ export default function App() {
                     )?.implementedCount || 0}
                   </p>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Scoring Table */}
+          <Card className="xl:col-span-3 shadow-sm border-border bg-white mt-6">
+            <CardHeader className="bg-slate-50 border-b border-border py-3 px-4 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-[16px] font-bold text-slate-800 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                Bảng chấm điểm hiệu quả thực hiện của các Điện lực
+              </CardTitle>
+              <div className="text-[11px] font-medium text-slate-500 italic">
+                * Sắp xếp theo thứ tự từ cao đến thấp
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-100 hover:bg-slate-100">
+                      <TableHead className="w-[80px] text-center font-bold">Thứ hạng</TableHead>
+                      <TableHead className="font-bold">Điện lực</TableHead>
+                      <TableHead className="text-center font-bold">Điểm số</TableHead>
+                      <TableHead className="text-center font-bold">Trạng thái hiệu quả</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scoringData.map((stat, idx) => (
+                      <TableRow key={idx} className="hover:bg-slate-50 transition-colors">
+                        <TableCell className="text-center font-bold">
+                          {idx === 0 ? <span className="text-xl">🥇</span> : 
+                           idx === 1 ? <span className="text-xl">🥈</span> :
+                           idx === 2 ? <span className="text-xl">🥉</span> : idx + 1}
+                        </TableCell>
+                        <TableCell className="font-semibold text-slate-700">{stat.company}</TableCell>
+                        <TableCell className="text-center font-bold text-lg text-blue-600">
+                          {stat.score.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className={cn(
+                            "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
+                            stat.score >= 150 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                            stat.score >= 100 ? "bg-blue-50 text-blue-700 border-blue-200" :
+                            stat.score >= 50 ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
+                            "bg-red-50 text-red-700 border-red-200"
+                          )}>
+                            {stat.score >= 150 ? "Xuất sắc" :
+                             stat.score >= 100 ? "Tốt" :
+                             stat.score >= 50 ? "Trung bình" : "Cần cải thiện"}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
