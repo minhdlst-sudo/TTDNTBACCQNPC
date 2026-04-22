@@ -94,6 +94,28 @@ const normalizeString = (s: string) => {
 
 type SheetData = string[][];
 
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-2 sm:p-3 border border-slate-200 shadow-xl rounded-lg text-[10px] sm:text-[12px] min-w-[160px] sm:min-w-[220px] z-[100]">
+        <p className="font-bold text-slate-800 mb-1 sm:mb-2 border-b border-slate-100 pb-1">{label}</p>
+        <div className="space-y-1 sm:space-y-1.5">
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex justify-between items-center gap-2 sm:gap-4">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.fill }} />
+                <span className="text-slate-600 font-medium whitespace-nowrap">{entry.name}</span>
+              </div>
+              <span className="font-bold" style={{ color: entry.fill }}>{entry.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function App() {
   const [dataSheet, setDataSheet] = useState<SheetData>([]);
   const [capNhatSheet, setCapNhatSheet] = useState<SheetData>([]);
@@ -1016,7 +1038,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col md:flex-row p-4 gap-4 overflow-hidden">
+      <main className="flex-1 flex flex-col md:flex-row p-2 sm:p-4 gap-4 overflow-hidden">
         {activeTab === "cap-nhat" ? (
           <>
             {/* Form Panel */}
@@ -1040,6 +1062,7 @@ export default function App() {
                       <PopoverTrigger 
                         render={
                           <Button
+                            type="button"
                             variant="outline"
                             role="combobox"
                             aria-expanded={openDienLuc}
@@ -1050,9 +1073,12 @@ export default function App() {
                           </Button>
                         }
                       />
-                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" align="start">
+                      <PopoverContent 
+                        className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" 
+                        align="start"
+                      >
                         <Command>
-                          <CommandInput placeholder="Tìm điện lực..." className="h-9 text-[13px]" />
+                          <CommandInput placeholder="Tìm điện lực..." className="h-9 text-[13px]" autoFocus={false} />
                           <CommandList className="max-h-[300px]">
                             <CommandEmpty>Không tìm thấy.</CommandEmpty>
                             <CommandGroup>
@@ -1096,6 +1122,7 @@ export default function App() {
                       <PopoverTrigger 
                         render={
                           <Button
+                            type="button"
                             variant="outline"
                             role="combobox"
                             aria-expanded={openTenTram}
@@ -1106,9 +1133,12 @@ export default function App() {
                           </Button>
                         }
                       />
-                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" align="start">
+                      <PopoverContent 
+                        className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" 
+                        align="start"
+                      >
                         <Command>
-                          <CommandInput placeholder="Nhập tên trạm để tìm..." className="h-9 text-[13px]" />
+                          <CommandInput placeholder="Nhập tên trạm để tìm..." className="h-9 text-[13px]" autoFocus={false} />
                           <CommandList className="max-h-[300px]">
                             <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
                             <CommandGroup>
@@ -1160,7 +1190,6 @@ export default function App() {
                           mode="single"
                           selected={ngayThucHien}
                           onSelect={setNgayThucHien}
-                          initialFocus
                           locale={vi}
                         />
                       </PopoverContent>
@@ -1173,7 +1202,7 @@ export default function App() {
                       <SelectTrigger id="phan-loai" className="h-9 text-[13px] bg-white border-border">
                         <SelectValue placeholder="Chọn phân loại" />
                       </SelectTrigger>
-                      <SelectContent className="bg-white">
+                      <SelectContent className="bg-white" align="start">
                         {phanLoaiOptions.map((opt) => (
                           <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                         ))}
@@ -1284,9 +1313,8 @@ export default function App() {
                         </Button>
                       }
                     />
-                    <PopoverContent className="w-auto p-0 bg-white shadow-xl border-border" align="end">
+                    <PopoverContent className="w-auto p-0 bg-white shadow-xl border-border" align="start">
                       <Calendar
-                        initialFocus
                         mode="range"
                         defaultMonth={dateRange.from}
                         selected={dateRange}
@@ -1322,9 +1350,9 @@ export default function App() {
                         </Button>
                       }
                     />
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" align="end">
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" align="start">
                       <Command>
-                        <CommandInput placeholder="Tìm trạm..." className="h-8 text-[12px]" />
+                        <CommandInput placeholder="Tìm trạm..." className="h-8 text-[12px]" autoFocus={false} />
                         <CommandList>
                           <CommandEmpty>Không tìm thấy.</CommandEmpty>
                           <CommandGroup>
@@ -1457,6 +1485,7 @@ export default function App() {
                     <PopoverTrigger 
                       render={
                         <Button
+                          type="button"
                           variant="outline"
                           role="combobox"
                           className="w-[180px] h-8 text-[12px] bg-white border-border justify-between"
@@ -1466,9 +1495,12 @@ export default function App() {
                         </Button>
                       }
                     />
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" align="end">
+                    <PopoverContent 
+                      className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" 
+                      align="start"
+                    >
                       <Command>
-                        <CommandInput placeholder="Tìm trạm..." className="h-8 text-[12px]" />
+                        <CommandInput placeholder="Tìm trạm..." className="h-8 text-[12px]" autoFocus={false} />
                         <CommandList>
                           <CommandEmpty>Không tìm thấy.</CommandEmpty>
                           <CommandGroup>
@@ -1721,6 +1753,7 @@ export default function App() {
                     <PopoverTrigger 
                       render={
                         <Button
+                          type="button"
                           variant="outline"
                           role="combobox"
                           aria-expanded={openDienLucTongHop}
@@ -1731,9 +1764,12 @@ export default function App() {
                         </Button>
                       }
                     />
-                    <PopoverContent className="w-[200px] p-0 bg-white shadow-xl z-[100]">
+                    <PopoverContent 
+                      className="w-[200px] p-0 bg-white shadow-xl z-[100]"
+                      align="start"
+                    >
                       <Command>
-                        <CommandInput placeholder="Tìm điện lực..." className="h-9" />
+                        <CommandInput placeholder="Tìm điện lực..." className="h-9" autoFocus={false} />
                         <CommandList>
                           <CommandEmpty>Không tìm thấy.</CommandEmpty>
                           <CommandGroup>
@@ -1777,6 +1813,7 @@ export default function App() {
                     <PopoverTrigger 
                       render={
                         <Button
+                          type="button"
                           variant="outline"
                           role="combobox"
                           aria-expanded={openSearchTongHop}
@@ -1787,9 +1824,12 @@ export default function App() {
                         </Button>
                       }
                     />
-                    <PopoverContent className="w-[300px] p-0 bg-white shadow-xl z-[100]">
+                    <PopoverContent 
+                      className="w-[300px] p-0 bg-white shadow-xl z-[100]"
+                      align="start"
+                    >
                       <Command>
-                        <CommandInput placeholder="Gõ tên trạm..." className="h-9" />
+                        <CommandInput placeholder="Gõ tên trạm..." className="h-9" autoFocus={false} />
                         <CommandList>
                           <CommandEmpty>Không tìm thấy.</CommandEmpty>
                           <CommandGroup>
@@ -1942,31 +1982,35 @@ export default function App() {
         </motion.div>
       </section>
     ) : (
-      <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full">
+      <section className="flex-1 flex flex-col gap-4 sm:gap-6 p-2 sm:p-4 overflow-y-auto w-full">
         {/* Statistics Filters */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg shadow-sm border border-border"
+          className="flex flex-wrap items-center gap-2 sm:gap-4 bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-border"
         >
-          <div className="flex items-center gap-2">
-            <Label className="whitespace-nowrap font-bold text-[#1a73e8]">Chọn đơn vị thống kê:</Label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+            <Label className="whitespace-nowrap font-bold text-[#1a73e8] text-[12px] sm:text-[14px]">Chọn đơn vị thống kê:</Label>
             <Popover open={openDienLucThongKe} onOpenChange={setOpenDienLucThongKe}>
               <PopoverTrigger 
                 render={
                   <Button
+                    type="button"
                     variant="outline"
                     role="combobox"
-                    className="w-[250px] h-10 justify-between bg-white border-border text-[13px] font-semibold"
+                    className="w-full sm:w-[250px] h-9 sm:h-10 justify-between bg-white border-border text-[12px] sm:text-[13px] font-semibold"
                   >
                     {selectedDienLucThongKe === "all" ? "Toàn Công ty" : selectedDienLucThongKe}
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 }
               />
-              <PopoverContent className="w-[250px] p-0 bg-white shadow-xl z-[100]">
+              <PopoverContent 
+                className="w-[250px] p-0 bg-white shadow-xl z-[100]"
+                align="start"
+              >
                 <Command>
-                  <CommandInput placeholder="Tìm đơn vị..." className="h-9" />
+                  <CommandInput placeholder="Tìm đơn vị..." className="h-9" autoFocus={false} />
                   <CommandList>
                     <CommandEmpty>Không tìm thấy.</CommandEmpty>
                     <CommandGroup>
@@ -2011,33 +2055,33 @@ export default function App() {
         >
           {/* Table Summary */}
           <Card className="xl:col-span-3 shadow-sm border-border bg-white">
-            <CardHeader className="bg-slate-50 border-b border-border py-3 px-4 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-[16px] font-bold text-slate-800 flex items-center gap-2">
-                <TableIcon className="w-5 h-5 text-[#1a73e8]" />
-                Thống kê kết quả thực hiện {selectedDienLucThongKe === "all" ? "theo Điện lực" : `- ${selectedDienLucThongKe}`}
+            <CardHeader className="bg-slate-50 border-b border-border py-2 sm:py-3 px-3 sm:px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
+              <CardTitle className="text-[14px] sm:text-[16px] font-bold text-slate-800 flex items-center gap-2">
+                <TableIcon className="w-4 h-4 sm:w-5 h-5 text-[#1a73e8]" />
+                Thống kê {selectedDienLucThongKe !== "all" ? `- ${selectedDienLucThongKe}` : ""}
               </CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <Dialog>
                   <DialogTrigger
                     render={
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 text-[12px] bg-white border-border text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        className="h-7 sm:h-8 text-[11px] sm:text-[12px] bg-white border-border text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
                       >
-                        <HelpCircle className="w-3.5 h-3.5 mr-1.5" />
-                        Phương pháp tính
+                        <HelpCircle className="w-3 h-3 sm:w-3.5 h-3.5 mr-1 sm:mr-1.5" />
+                        HD tính toán
                       </Button>
                     }
                   />
                   <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle className="text-xl font-bold flex items-center gap-2">
-                        <Info className="w-6 h-6 text-blue-600" />
-                        Phương pháp tính toán thống kê & chấm điểm
+                  <DialogHeader>
+                      <DialogTitle className="text-lg sm:text-xl font-bold flex items-center gap-2">
+                        <Info className="w-5 h-5 sm:w-6 h-6 text-blue-600" />
+                        Phương pháp tính & chấm điểm
                       </DialogTitle>
-                      <DialogDescription>
-                        Chi tiết về cách xác định mức đánh giá và công thức chấm điểm hiệu quả thực hiện.
+                      <DialogDescription className="text-xs sm:text-sm">
+                        Xác định mức đánh giá và công thức chấm điểm hiệu quả thực hiện.
                       </DialogDescription>
                     </DialogHeader>
 
@@ -2126,11 +2170,11 @@ export default function App() {
                 <Table className="border-separate border-spacing-0">
                   <TableHeader className="sticky top-0 z-30 shadow-sm bg-slate-50">
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="font-bold text-slate-700 min-w-[150px] sticky left-0 top-0 bg-slate-50 z-40 border-b border-border">Điện lực</TableHead>
-                      <TableHead className="text-center font-bold text-slate-700 sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[11px]">Tổng số trạm</TableHead>
-                      <TableHead className="text-center font-bold text-slate-700 sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[11px]">Đã thực hiện</TableHead>
+                      <TableHead className="font-bold text-slate-700 min-w-[120px] sm:min-w-[150px] sticky left-0 top-0 bg-slate-50 z-40 border-b border-border text-[10px] sm:text-[11px]">Điện lực</TableHead>
+                      <TableHead className="text-center font-bold text-slate-700 sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[10px] sm:text-[11px]">Tổng số trạm</TableHead>
+                      <TableHead className="text-center font-bold text-slate-700 sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[10px] sm:text-[11px]">Đã thực hiện</TableHead>
                       {Object.keys(STATUS_COLORS).map(status => (
-                        <TableHead key={status} className="text-center font-bold text-slate-700 min-w-[100px] sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[11px]">
+                        <TableHead key={status} className="text-center font-bold text-slate-700 min-w-[80px] sm:min-w-[100px] sticky top-0 bg-slate-50 z-30 border-b border-border whitespace-normal leading-tight h-12 uppercase text-[10px] sm:text-[11px]">
                           {status}
                         </TableHead>
                       ))}
@@ -2144,21 +2188,21 @@ export default function App() {
                         "hover:bg-slate-50 transition-colors",
                         stat.company === "TỔNG CỘNG" ? "bg-slate-100 font-bold border-t-2 border-slate-300" : ""
                       )}>
-                        <TableCell className="font-medium sticky left-0 bg-white group-hover:bg-slate-50">{stat.company}</TableCell>
-                        <TableCell className="text-center font-semibold">{stat.totalStations}</TableCell>
+                        <TableCell className="font-medium sticky left-0 bg-white group-hover:bg-slate-50 text-[11px] sm:text-[12px]">{stat.company}</TableCell>
+                        <TableCell className="text-center font-semibold text-[11px] sm:text-[12px]">{stat.totalStations}</TableCell>
                         <TableCell className="text-center">
                           <div className="flex flex-col items-center">
-                            <span className="font-semibold text-emerald-600">{stat.implementedCount}</span>
-                            <span className="text-[10px] text-slate-400">({stat.totalStations > 0 ? (stat.implementedCount / stat.totalStations * 100).toFixed(1) : 0}%)</span>
+                            <span className="font-semibold text-emerald-600 text-[11px] sm:text-[12px]">{stat.implementedCount}</span>
+                            <span className="text-[9px] sm:text-[10px] text-slate-400">({stat.totalStations > 0 ? (stat.implementedCount / stat.totalStations * 100).toFixed(1) : 0}%)</span>
                           </div>
                         </TableCell>
                         {Object.keys(STATUS_COLORS).map(status => (
                           <TableCell key={status} className="text-center">
                             <div className="flex flex-col items-center">
-                              <span className="font-semibold" style={{ color: STATUS_COLORS[status] }}>
+                              <span className="font-semibold text-[11px] sm:text-[12px]" style={{ color: STATUS_COLORS[status] }}>
                                 {stat.counts[status as keyof typeof stat.counts]}
                               </span>
-                              <span className="text-[10px] text-slate-400">
+                              <span className="text-[9px] sm:text-[10px] text-slate-400">
                                 ({stat.percentages[status].toFixed(1)}%)
                               </span>
                             </div>
@@ -2174,14 +2218,14 @@ export default function App() {
 
           {/* Charts section */}
           <Card className="xl:col-span-2 shadow-sm border-border bg-white flex flex-col h-[500px]">
-            <CardHeader className="py-4 border-b border-border">
-              <CardTitle className="text-[16px] font-bold">Biểu đồ phân bố kết quả theo Điện lực</CardTitle>
+            <CardHeader className="py-2.5 sm:py-4 border-b border-border">
+              <CardTitle className="text-[14px] sm:text-[16px] font-bold">Biểu đồ kết quả theo Điện lực</CardTitle>
             </CardHeader>
             <CardContent className="pt-6 flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={statisticsData.filter(s => s.company !== "TỔNG CỘNG" && (selectedDienLucThongKe === "all" || s.company === selectedDienLucThongKe))}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                  margin={{ top: 20, right: 10, left: 0, bottom: 60 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
@@ -2190,14 +2234,13 @@ export default function App() {
                     textAnchor="end" 
                     interval={0} 
                     height={80}
-                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    tick={{ fontSize: 9, fill: '#64748b' }}
                   />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} width={30} />
                   <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    content={<CustomTooltip />}
                     cursor={{ fill: '#f8fafc' }}
                   />
-                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
                   {Object.keys(STATUS_COLORS).map(status => (
                     <Bar 
                       key={status}
@@ -2242,9 +2285,8 @@ export default function App() {
                       ))}
                     </Pie>
                     <Tooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                      content={<CustomTooltip />}
                     />
-                    <Legend layout="horizontal" align="center" verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -2273,13 +2315,13 @@ export default function App() {
 
           {/* Scoring Table */}
           <Card className="xl:col-span-3 shadow-sm border-border bg-white mt-6">
-            <CardHeader className="bg-slate-50 border-b border-border py-3 px-4 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-[16px] font-bold text-slate-800 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                Bảng chấm điểm hiệu quả thực hiện của các Điện lực
+            <CardHeader className="bg-slate-50 border-b border-border py-2 sm:py-3 px-3 sm:px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
+              <CardTitle className="text-[14px] sm:text-[16px] font-bold text-slate-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 sm:w-5 h-5 text-emerald-600" />
+                Bảng chấm điểm hiệu quả
               </CardTitle>
-              <div className="text-[11px] font-medium text-slate-500 italic">
-                * Sắp xếp theo thứ tự từ cao đến thấp
+              <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 italic">
+                * Sắp xếp theo điểm số từ cao đến thấp
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-hidden">
@@ -2287,25 +2329,25 @@ export default function App() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-100 hover:bg-slate-100">
-                      <TableHead className="w-[80px] text-center font-bold">Thứ hạng</TableHead>
-                      <TableHead className="font-bold">Điện lực</TableHead>
-                      <TableHead className="text-center font-bold">Điểm số</TableHead>
-                      <TableHead className="text-center font-bold">Trạng thái hiệu quả</TableHead>
+                      <TableHead className="w-[60px] sm:w-[80px] text-center font-bold px-2 text-[11px] sm:text-[13px]">Thứ hạng</TableHead>
+                      <TableHead className="font-bold px-2 text-[11px] sm:text-[13px]">Điện lực</TableHead>
+                      <TableHead className="text-center font-bold px-2 text-[11px] sm:text-[13px]">Điểm số</TableHead>
+                      <TableHead className="text-center font-bold hidden md:table-cell px-2 text-[11px] sm:text-[13px]">Trạng thái hiệu quả</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {scoringData.map((stat, idx) => (
                       <TableRow key={idx} className="hover:bg-slate-50 transition-colors">
-                        <TableCell className="text-center font-bold">
-                          {idx === 0 ? <span className="text-xl">🥇</span> : 
-                           idx === 1 ? <span className="text-xl">🥈</span> :
-                           idx === 2 ? <span className="text-xl">🥉</span> : idx + 1}
+                        <TableCell className="text-center font-bold px-2 py-2.5 sm:py-4">
+                          {idx === 0 ? <span className="text-base sm:text-xl">🥇</span> : 
+                           idx === 1 ? <span className="text-base sm:text-xl">🥈</span> :
+                           idx === 2 ? <span className="text-base sm:text-xl">🥉</span> : <span className="text-[11px] sm:text-[14px]">{idx + 1}</span>}
                         </TableCell>
-                        <TableCell className="font-semibold text-slate-700">{stat.company}</TableCell>
-                        <TableCell className="text-center font-bold text-lg text-blue-600">
-                          {stat.score.toFixed(2)}
+                        <TableCell className="font-semibold text-slate-700 px-2 py-2.5 sm:py-4 text-[11px] sm:text-[14px]">{stat.company}</TableCell>
+                        <TableCell className="text-center font-bold text-sm sm:text-lg text-blue-600 px-2 py-2.5 sm:py-4">
+                          {stat.score.toFixed(1)}
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="text-center hidden md:table-cell px-2 py-3 sm:py-4">
                           <div className={cn(
                             "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
                             stat.score >= 150 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
