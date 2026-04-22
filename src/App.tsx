@@ -184,6 +184,32 @@ export default function App() {
     exportToExcel(header, dataRows, "Thong_ke_TTDN");
   };
 
+  const exportPlanByUnitToExcel = () => {
+    const header = [
+      "Điện lực",
+      "SCTX (KH)", "SCTX (TH)",
+      "SCL (KH)", "SCL (TH)",
+      "ĐTXD (KH)", "ĐTXD (TH)"
+    ];
+
+    const dataRows = planComparison.byUnit.map(u => [
+      u.unit,
+      String(u.SCTX.plan), String(u.SCTX.actual),
+      String(u.SCL.plan), String(u.SCL.actual),
+      String(u.DTXD.plan), String(u.DTXD.actual)
+    ]);
+
+    // Add total row
+    dataRows.push([
+      "TỔNG CỘNG",
+      String(planComparison.total.SCTX.plan), String(planComparison.total.SCTX.actual),
+      String(planComparison.total.SCL.plan), String(planComparison.total.SCL.actual),
+      String(planComparison.total.DTXD.plan), String(planComparison.total.DTXD.actual)
+    ]);
+
+    exportToExcel(header, dataRows, "Tong_hop_Ke_hoach_Thuc_hien");
+  };
+
   const [lastSync, setLastSync] = useState<Date | null>(null);
 
   const fetchData = async () => {
@@ -683,6 +709,120 @@ export default function App() {
       .filter(s => s.company !== "TỔNG CỘNG")
       .sort((a, b) => (b.score || 0) - (a.score || 0));
   }, [statisticsData]);
+
+  const planComparison = useMemo(() => {
+    if (dataSheet.length < 2 || capNhatSheet.length < 2) {
+      return {
+        total: {
+          SCTX: { plan: 0, actual: 0 },
+          SCL: { plan: 0, actual: 0 },
+          DTXD: { plan: 0, actual: 0 }
+        },
+        byUnit: []
+      };
+    }
+
+    const dataHeader = dataSheet[0].map(h => normalizeString(String(h || "")));
+    const cnHeader = capNhatSheet[0].map(h => normalizeString(String(h || "")));
+
+    const findCol = (header: string[], keywords: string[]) => {
+      return header.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
+    };
+
+    const idxDataTram = findCol(dataHeader, ["ten tram", "tba", "tram"]);
+    const idxDataDL = findCol(dataHeader, ["dien luc", "don vi"]);
+    const idxDataSCTX = findCol(dataHeader, ["ke hoach sctx", "kh sctx", "sctx"]);
+    const idxDataSCL = findCol(dataHeader, ["ke hoach scl", "kh scl", "scl"]);
+    const idxDataDTXD = findCol(dataHeader, ["ke hoach dtxd", "kh dtxd", "dtxd", "dau tu xay dung", "xdcb"]);
+
+    const idxCnTram = findCol(cnHeader, ["ten tram", "tba", "tram"]);
+    const idxCnDL = findCol(cnHeader, ["dien luc", "don vi"]);
+    const idxCnPhanLoai = findCol(cnHeader, ["phan loai"]);
+    const idxCnCongViec = findCol(cnHeader, ["cong viec da thuc hien", "giai phap da thuc hien", "giai phap", "noi dung"]);
+
+    const units = new Set<string>();
+    dataSheet.slice(1).forEach(row => {
+      if (idxDataDL !== -1 && row[idxDataDL]) units.add(String(row[idxDataDL]).trim());
+    });
+    capNhatSheet.slice(1).forEach(row => {
+      if (idxCnDL !== -1 && row[idxCnDL]) units.add(String(row[idxCnDL]).trim());
+    });
+
+    const unitList = Array.from(units).sort();
+    
+    // Initialize stats
+    const unitStats: Record<string, any> = {};
+    unitList.forEach(u => {
+      unitStats[u] = {
+        SCTX: { plan: new Set(), actual: new Set() },
+        SCL: { plan: new Set(), actual: new Set() },
+        DTXD: { plan: new Set(), actual: new Set() }
+      };
+    });
+
+    const totalSets = {
+      SCTX: { plan: new Set(), actual: new Set() },
+      SCL: { plan: new Set(), actual: new Set() },
+      DTXD: { plan: new Set(), actual: new Set() }
+    };
+
+    // Count in data sheet (Plan)
+    dataSheet.slice(1).forEach(row => {
+      const station = String(row[idxDataTram] || "").trim();
+      const unit = String(row[idxDataDL] || "").trim();
+      if (!station || idxDataTram === -1) return;
+      
+      if (idxDataSCTX !== -1 && row[idxDataSCTX] && String(row[idxDataSCTX]).trim() !== "") {
+        totalSets.SCTX.plan.add(station);
+        if (unitStats[unit]) unitStats[unit].SCTX.plan.add(station);
+      }
+      if (idxDataSCL !== -1 && row[idxDataSCL] && String(row[idxDataSCL]).trim() !== "") {
+        totalSets.SCL.plan.add(station);
+        if (unitStats[unit]) unitStats[unit].SCL.plan.add(station);
+      }
+      if (idxDataDTXD !== -1 && row[idxDataDTXD] && String(row[idxDataDTXD]).trim() !== "") {
+        totalSets.DTXD.plan.add(station);
+        if (unitStats[unit]) unitStats[unit].DTXD.plan.add(station);
+      }
+    });
+
+    // Count in cap nhat sheet (Actual)
+    capNhatSheet.slice(1).forEach(row => {
+      const station = String(row[idxCnTram] || "").trim();
+      const unit = String(row[idxCnDL] || "").trim();
+      if (!station || idxCnTram === -1) return;
+
+      const pl = normalizeString(String(row[idxCnPhanLoai] || ""));
+      const hasWork = idxCnCongViec !== -1 && row[idxCnCongViec] && String(row[idxCnCongViec]).trim() !== "";
+      
+      if (hasWork) {
+        if (pl.includes("sctx")) {
+          totalSets.SCTX.actual.add(station);
+          if (unitStats[unit]) unitStats[unit].SCTX.actual.add(station);
+        } else if (pl.includes("scl")) {
+          totalSets.SCL.actual.add(station);
+          if (unitStats[unit]) unitStats[unit].SCL.actual.add(station);
+        } else if (pl.includes("dtxd") || pl.includes("xdcb") || pl.includes("xaydung")) {
+          totalSets.DTXD.actual.add(station);
+          if (unitStats[unit]) unitStats[unit].DTXD.actual.add(station);
+        }
+      }
+    });
+
+    return {
+      total: {
+        SCTX: { plan: totalSets.SCTX.plan.size, actual: totalSets.SCTX.actual.size },
+        SCL: { plan: totalSets.SCL.plan.size, actual: totalSets.SCL.actual.size },
+        DTXD: { plan: totalSets.DTXD.plan.size, actual: totalSets.DTXD.actual.size }
+      },
+      byUnit: unitList.map(u => ({
+        unit: u,
+        SCTX: { plan: unitStats[u].SCTX.plan.size, actual: unitStats[u].SCTX.actual.size },
+        SCL: { plan: unitStats[u].SCL.plan.size, actual: unitStats[u].SCL.actual.size },
+        DTXD: { plan: unitStats[u].DTXD.plan.size, actual: unitStats[u].DTXD.actual.size }
+      }))
+    };
+  }, [dataSheet, capNhatSheet]);
 
   const donViOptions = useMemo(() => {
     if (dataSheet.length < 2) return [];
@@ -1419,6 +1559,151 @@ export default function App() {
     ) : activeTab === "tong-hop" ? (
       /* NEW: Tong Hop View */
       <section className="flex-1 flex flex-col gap-4 overflow-hidden w-full">
+        {/* Comparison Summary Card */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex-none"
+        >
+          <Card className="shadow-sm border-border bg-white overflow-hidden">
+            <CardHeader className="bg-slate-50 border-b border-border py-2 px-4">
+              <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wider">
+                <TableIcon className="w-4 h-4 text-primary" />
+                Tổng hợp so sánh kế hoạch và thực hiện
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { label: "Sửa chữa thường xuyên (SCTX)", data: planComparison.total.SCTX, color: "blue" },
+                  { label: "Sửa chữa lớn (SCL)", data: planComparison.total.SCL, color: "emerald" },
+                  { label: "Đầu tư xây dựng (ĐTXD)", data: planComparison.total.DTXD, color: "orange" }
+                ].map((item, idx) => (
+                  <div key={idx} className={cn(
+                    "p-3 rounded-lg border flex flex-col gap-2 transition-all hover:shadow-md",
+                    item.color === "blue" ? "bg-blue-50/30 border-blue-100" :
+                    item.color === "emerald" ? "bg-emerald-50/30 border-emerald-100" :
+                    "bg-orange-50/30 border-orange-100"
+                  )}>
+                    <div className="flex items-center justify-between">
+                      <span className={cn(
+                        "text-[12px] font-bold uppercase",
+                        item.color === "blue" ? "text-blue-700" :
+                        item.color === "emerald" ? "text-emerald-700" :
+                        "text-orange-700"
+                      )}>{item.label}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase">Tổng kế hoạch</span>
+                        <span className="text-[18px] font-bold text-slate-700">{item.data.plan} <span className="text-[10px] text-slate-400">trạm</span></span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase">Đã thực hiện</span>
+                        <div className="flex items-baseline gap-1">
+                          <span className={cn(
+                            "text-[18px] font-bold",
+                            item.color === "blue" ? "text-blue-600" :
+                            item.color === "emerald" ? "text-emerald-600" :
+                            "text-orange-600"
+                          )}>{item.data.actual}</span>
+                          <span className="text-[10px] text-slate-400">trạm</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className={cn(
+                          "h-full rounded-full transition-all duration-1000",
+                          item.color === "blue" ? "bg-blue-500" :
+                          item.color === "emerald" ? "bg-emerald-500" :
+                          "bg-orange-500"
+                        )}
+                        style={{ width: `${item.data.plan > 0 ? Math.min(100, (item.data.actual / item.data.plan) * 100) : 0}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                       <span>Tỷ lệ hoàn thành:</span>
+                       <span>{item.data.plan > 0 ? ((item.data.actual / item.data.plan) * 100).toFixed(1) : "0"}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* NEW: Per-Unit Comparison Table */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex-none"
+        >
+          <Card className="shadow-sm border-border overflow-hidden bg-white">
+            <CardHeader className="py-2 px-4 bg-slate-50 border-b border-border">
+              <div className="flex items-center justify-between gap-4">
+                <div className="w-8 shrink-0" />
+                <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center justify-center gap-2 uppercase tracking-wider text-center">
+                  <TableIcon className="w-4 h-4 text-emerald-600" />
+                  Tổng hợp kế hoạch & thực hiện theo Điện lực
+                </CardTitle>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportPlanByUnitToExcel}
+                  className="h-8 px-2 text-[11px] font-bold text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" />
+                  Xuất Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/50">
+                    <TableHead className="text-[11px] font-bold uppercase text-slate-500 py-3 px-4">Điện lực</TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-center text-blue-600 py-3 px-2 border-l" colSpan={2}>SCTX</TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-center text-emerald-600 py-3 px-2 border-l" colSpan={2}>SCL</TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-center text-orange-600 py-3 px-2 border-l" colSpan={2}>ĐTXD</TableHead>
+                  </TableRow>
+                  <TableRow className="bg-slate-50/30">
+                    <TableHead className="py-2 px-4"></TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400 border-l">KH</TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400">TH</TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400 border-l">KH</TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400">TH</TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400 border-l">KH</TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400">TH</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {planComparison.byUnit.map((u, i) => (
+                    <TableRow key={i} className="hover:bg-slate-50 transition-colors">
+                      <TableCell className="py-2 px-4 font-bold text-[12px] text-slate-700">{u.unit}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] text-slate-600 border-l">{u.SCTX.plan}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] font-bold text-blue-600">{u.SCTX.actual}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] text-slate-600 border-l">{u.SCL.plan}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] font-bold text-emerald-600">{u.SCL.actual}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] text-slate-600 border-l">{u.DTXD.plan}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] font-bold text-orange-600">{u.DTXD.actual}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-slate-100/50 font-bold">
+                    <TableCell className="py-3 px-4 text-[12px] uppercase">TỔNG CỘNG</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] border-l">{planComparison.total.SCTX.plan}</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] text-blue-700">{planComparison.total.SCTX.actual}</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] border-l">{planComparison.total.SCL.plan}</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] text-emerald-700">{planComparison.total.SCL.actual}</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] border-l">{planComparison.total.DTXD.plan}</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] text-orange-700">{planComparison.total.DTXD.actual}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </motion.div>
+
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
