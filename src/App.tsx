@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { AppLogo } from "./components/AppLogo";
 import { 
   Plus, 
   Table as TableIcon, 
@@ -1151,8 +1152,8 @@ export default function App() {
       <header className="bg-gradient-to-r from-[#1a73e8] to-[#0d47a1] border-b border-primary/20 flex flex-col md:h-[64px] md:flex-row md:items-center md:justify-between px-4 sm:px-6 py-3 md:py-0 flex-shrink-0 shadow-md z-20 gap-2 md:gap-4">
         <div className="flex items-center justify-between md:justify-start gap-3 overflow-hidden w-full md:w-auto">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="bg-white/10 p-1.5 rounded-lg backdrop-blur-sm shrink-0">
-              <Database className="text-white w-5 h-5 md:w-6 md:h-6" />
+            <div className="bg-white/10 p-1 rounded-lg backdrop-blur-sm shrink-0 border border-white/20">
+              <AppLogo className="w-6 h-6 md:w-8 md:h-8" />
             </div>
             <h1 className="font-bold text-[14px] sm:text-[16px] md:text-[20px] text-white tracking-tight uppercase drop-shadow-sm whitespace-nowrap overflow-hidden text-ellipsis">Quản lý TTĐN TBA công cộng - QNPC</h1>
           </div>
