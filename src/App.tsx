@@ -139,7 +139,6 @@ export default function App() {
 
   // Filter state
   const [filterTenTram, setFilterTenTram] = useState("all");
-  const [filterDataTenTram, setFilterDataTenTram] = useState("all");
   const [filterDonVi, setFilterDonVi] = useState("all");
 
   const [dateRange, setDateRange] = useState<{
@@ -153,7 +152,6 @@ export default function App() {
   // Searchable Select state
   const [openTenTram, setOpenTenTram] = useState(false);
   const [openFilterCapNhat, setOpenFilterCapNhat] = useState(false);
-  const [openFilterData, setOpenFilterData] = useState(false);
   const [openFilterDonVi, setOpenFilterDonVi] = useState(false);
   const [openDienLuc, setOpenDienLuc] = useState(false);
   const [selectedDienLucThongKe, setSelectedDienLucThongKe] = useState("all");
@@ -1101,17 +1099,13 @@ export default function App() {
     if (filterTenTram !== "all" && indexTenTram !== -1) {
       result = result.filter(row => row[indexTenTram] === filterTenTram);
     }
-
-    if (filterDataTenTram !== "all" && indexTenTram !== -1) {
-      result = result.filter(row => row[indexTenTram] === filterDataTenTram);
-    }
     
     if (filterDonVi !== "all" && indexDonVi !== -1) {
       result = result.filter(row => row[indexDonVi] === filterDonVi);
     }
     
     return result;
-  }, [dataSheet, filterDataTenTram, filterDonVi, dienLuc, filterTenTram]);
+  }, [dataSheet, filterDonVi, dienLuc, filterTenTram]);
 
   const phanLoaiOptions = ["QLVH", "KD", "SCTX", "SCL", "ĐTXD"];
 
@@ -1241,7 +1235,7 @@ export default function App() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-1">
                     <Label htmlFor="dien-luc" className="text-[12px] font-bold text-[#1a73e8]">Điện lực <span className="text-red-500">*</span></Label>
-                    <Popover open={openDienLuc} onOpenChange={setOpenDienLuc}>
+                    <Popover open={openDienLuc} onOpenChange={setOpenDienLuc} modal="trap-focus">
                       <PopoverTrigger 
                         render={
                           <Button
@@ -1259,6 +1253,7 @@ export default function App() {
                       <PopoverContent 
                         className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" 
                         align="start"
+                        sideOffset={0}
                       >
                         <Command>
                           <CommandInput placeholder="Tìm điện lực..." className="h-9 text-[13px]" autoFocus={false} />
@@ -1301,7 +1296,7 @@ export default function App() {
 
                   <div className="space-y-1">
                     <Label htmlFor="ten-tram" className="text-[12px] font-bold text-[#1a73e8]">Tên trạm (từ Data) <span className="text-red-500">*</span></Label>
-                    <Popover open={openTenTram} onOpenChange={setOpenTenTram}>
+                    <Popover open={openTenTram} onOpenChange={setOpenTenTram} modal="trap-focus">
                       <PopoverTrigger 
                         render={
                           <Button
@@ -1319,6 +1314,7 @@ export default function App() {
                       <PopoverContent 
                         className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" 
                         align="start"
+                        sideOffset={0}
                       >
                         <Command>
                           <CommandInput placeholder="Nhập tên trạm để tìm..." className="h-9 text-[13px]" autoFocus={false} />
@@ -1520,7 +1516,7 @@ export default function App() {
                     </PopoverContent>
                   </Popover>
 
-                  <Popover open={openFilterCapNhat} onOpenChange={setOpenFilterCapNhat}>
+                  <Popover open={openFilterCapNhat} onOpenChange={setOpenFilterCapNhat} modal="trap-focus">
                     <PopoverTrigger 
                       render={
                         <Button
@@ -1533,7 +1529,11 @@ export default function App() {
                         </Button>
                       }
                     />
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" align="start">
+                    <PopoverContent 
+                      className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" 
+                      align="start"
+                      sideOffset={0}
+                    >
                       <Command>
                         <CommandInput placeholder="Tìm trạm..." className="h-8 text-[12px]" autoFocus={false} />
                         <CommandList>
@@ -1662,61 +1662,6 @@ export default function App() {
                     <Download className="w-3.5 h-3.5 mr-1.5" />
                     Xuất Excel
                   </Button>
-                  
-                  {/* Filter Ten Tram */}
-                  <Popover open={openFilterData} onOpenChange={setOpenFilterData}>
-                    <PopoverTrigger 
-                      render={
-                        <Button
-                          type="button"
-                          variant="outline"
-                          role="combobox"
-                          className="w-[180px] h-8 text-[12px] bg-white border-border justify-between"
-                        >
-                          {filterDataTenTram === "all" ? "Lọc Tên trạm" : filterDataTenTram}
-                          <Search className="ml-2 h-3 w-3 shrink-0 opacity-50" />
-                        </Button>
-                      }
-                    />
-                    <PopoverContent 
-                      className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border" 
-                      align="start"
-                    >
-                      <Command>
-                        <CommandInput placeholder="Tìm trạm..." className="h-8 text-[12px]" autoFocus={false} />
-                        <CommandList>
-                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              value="all"
-                              onSelect={() => {
-                                setFilterDataTenTram("all");
-                                setOpenFilterData(false);
-                              }}
-                              className="text-[12px] cursor-pointer"
-                            >
-                              <Check className={cn("mr-2 h-3 w-3", filterDataTenTram === "all" ? "opacity-100" : "opacity-0")} />
-                              Tất cả các trạm
-                            </CommandItem>
-                            {stationNames.map((name) => (
-                              <CommandItem
-                                key={name}
-                                value={name}
-                                onSelect={(val) => {
-                                  setFilterDataTenTram(val);
-                                  setOpenFilterData(false);
-                                }}
-                                className="text-[12px] cursor-pointer"
-                              >
-                                <Check className={cn("mr-2 h-3 w-3", filterDataTenTram === name ? "opacity-100" : "opacity-0")} />
-                                {name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
                 </div>
               </CardHeader>
               <CardContent className="p-0 flex-1 overflow-auto relative">
@@ -1778,7 +1723,7 @@ export default function App() {
         <div className="flex flex-wrap items-center gap-4 bg-white p-3 rounded-lg border border-border shadow-sm">
           <div className="flex items-center gap-2">
             <Label className="whitespace-nowrap font-bold text-[#1a73e8] text-[13px]">Điện lực:</Label>
-            <Popover open={openDienLucTongHop} onOpenChange={setOpenDienLucTongHop}>
+            <Popover open={openDienLucTongHop} onOpenChange={setOpenDienLucTongHop} modal="trap-focus">
               <PopoverTrigger 
                 render={
                   <Button
@@ -1792,7 +1737,11 @@ export default function App() {
                   </Button>
                 }
               />
-              <PopoverContent className="w-[200px] p-0 bg-white shadow-xl z-[100]" align="start">
+              <PopoverContent 
+                className="w-[200px] p-0 bg-white shadow-xl z-[100]" 
+                align="start"
+                sideOffset={0}
+              >
                 <Command>
                   <CommandInput placeholder="Tìm nhanh..." className="h-8 text-[12px]" autoFocus={false} />
                   <CommandList>
@@ -1832,6 +1781,148 @@ export default function App() {
             </Popover>
           </div>
         </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex-none"
+        >
+          <Card className="shadow-sm border-border">
+            <CardHeader className="py-4">
+              <CardTitle className="text-[16px] font-bold">Kết quả thực hiện từng trạm</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Label className="whitespace-nowrap font-bold text-[#1a73e8] text-[13px]">Chọn trạm để xem chi tiết:</Label>
+                  <Popover open={openSearchTongHop} onOpenChange={setOpenSearchTongHop} modal="trap-focus">
+                    <PopoverTrigger 
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openSearchTongHop}
+                          className="w-[300px] h-9 justify-between bg-white border-border text-[12px]"
+                        >
+                          {selectedStationTongHop ? selectedStationTongHop : "Tìm tên trạm..."}
+                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent 
+                      className="w-[300px] p-0 bg-white shadow-xl z-[100]"
+                      align="start"
+                      sideOffset={0}
+                    >
+                      <Command>
+                        <CommandInput placeholder="Gõ tên trạm..." className="h-9 text-[12px]" autoFocus={false} />
+                        <CommandList>
+                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                          <CommandGroup>
+                            {stationNamesTongHop.map((name) => (
+                              <CommandItem
+                                key={name}
+                                value={name}
+                                onSelect={() => {
+                                  setSelectedStationTongHop(name);
+                                  setOpenSearchTongHop(false);
+                                }}
+                                className="cursor-pointer text-[12px]"
+                              >
+                                <Check className={cn("mr-2 h-4 w-4", selectedStationTongHop === name ? "opacity-100" : "opacity-0")} />
+                                {name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {tongHopDetail ? (
+                <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                  {/* Assessment Card */}
+                  <div className={cn(
+                    "p-4 rounded-lg border-2 flex items-center gap-4",
+                    tongHopDetail.assessment.includes("cao") ? "bg-emerald-50 border-emerald-200 text-emerald-800" :
+                    tongHopDetail.assessment.includes("đạt kế hoạch") ? "bg-blue-50 border-blue-200 text-blue-800" :
+                    tongHopDetail.assessment.includes("trung bình") ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
+                    tongHopDetail.assessment.includes("thấp") ? "bg-orange-50 border-orange-200 text-orange-800" :
+                    tongHopDetail.assessment.includes("Thiếu") ? "bg-gray-50 border-gray-200 text-gray-500" :
+                    "bg-red-50 border-red-200 text-red-800"
+                  )}>
+                    <CheckCircle2 className="h-6 w-6 shrink-0" />
+                    <div>
+                      <h3 className="font-bold text-[14px] uppercase">Đánh giá khả năng đạt kế hoạch năm</h3>
+                      <p className="font-semibold text-[16px]">{tongHopDetail.assessment}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Group 1 */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-blue-500 pl-2">Thông tin chung</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {tongHopDetail.group1.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Group 2 */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-emerald-500 pl-2">Kế hoạch của Điện lực</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
+                        {tongHopDetail.group2.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Group 4 (Infrastructure/Plan) before Group 3 (Other) */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-orange-500 pl-2">Kết quả thực hiện TTĐN lũy kế và đánh giá</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {tongHopDetail.group4.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900 font-mono">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Group 3 */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-purple-500 pl-2">Triển khai công tác</h4>
+                      <div className="grid grid-cols-1 gap-3">
+                        {tongHopDetail.group3.map((item, idx) => (
+                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
+                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
+                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-20 text-slate-400 italic bg-white border-2 border-dashed rounded-lg">
+                  Vui lòng chọn Điện lực và Tên trạm để xem đánh giá chi tiết
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
 
         {/* Detailed Station List by Classification Card */}
         <motion.div
@@ -2085,147 +2176,6 @@ export default function App() {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex-none"
-        >
-          <Card className="shadow-sm border-border">
-            <CardHeader className="py-4">
-              <CardTitle className="text-[16px] font-bold">Kết quả thực hiện từng trạm</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Label className="whitespace-nowrap font-bold text-[#1a73e8] text-[13px]">Chọn trạm để xem chi tiết:</Label>
-                  <Popover open={openSearchTongHop} onOpenChange={setOpenSearchTongHop}>
-                    <PopoverTrigger 
-                      render={
-                        <Button
-                          type="button"
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openSearchTongHop}
-                          className="w-[300px] h-9 justify-between bg-white border-border text-[12px]"
-                        >
-                          {selectedStationTongHop ? selectedStationTongHop : "Tìm tên trạm..."}
-                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      }
-                    />
-                    <PopoverContent 
-                      className="w-[300px] p-0 bg-white shadow-xl z-[100]"
-                      align="start"
-                    >
-                      <Command>
-                        <CommandInput placeholder="Gõ tên trạm..." className="h-9 text-[12px]" autoFocus={false} />
-                        <CommandList>
-                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
-                          <CommandGroup>
-                            {stationNamesTongHop.map((name) => (
-                              <CommandItem
-                                key={name}
-                                value={name}
-                                onSelect={() => {
-                                  setSelectedStationTongHop(name);
-                                  setOpenSearchTongHop(false);
-                                }}
-                                className="cursor-pointer text-[12px]"
-                              >
-                                <Check className={cn("mr-2 h-4 w-4", selectedStationTongHop === name ? "opacity-100" : "opacity-0")} />
-                                {name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-
-              {tongHopDetail ? (
-                <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
-                  {/* Assessment Card */}
-                  <div className={cn(
-                    "p-4 rounded-lg border-2 flex items-center gap-4",
-                    tongHopDetail.assessment.includes("cao") ? "bg-emerald-50 border-emerald-200 text-emerald-800" :
-                    tongHopDetail.assessment.includes("đạt kế hoạch") ? "bg-blue-50 border-blue-200 text-blue-800" :
-                    tongHopDetail.assessment.includes("trung bình") ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
-                    tongHopDetail.assessment.includes("thấp") ? "bg-orange-50 border-orange-200 text-orange-800" :
-                    tongHopDetail.assessment.includes("Thiếu") ? "bg-gray-50 border-gray-200 text-gray-500" :
-                    "bg-red-50 border-red-200 text-red-800"
-                  )}>
-                    <CheckCircle2 className="h-6 w-6 shrink-0" />
-                    <div>
-                      <h3 className="font-bold text-[14px] uppercase">Đánh giá khả năng đạt kế hoạch năm</h3>
-                      <p className="font-semibold text-[16px]">{tongHopDetail.assessment}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Group 1 */}
-                    <div className="space-y-3">
-                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-blue-500 pl-2">Thông tin chung</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {tongHopDetail.group1.map((item, idx) => (
-                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
-                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
-                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Group 2 */}
-                    <div className="space-y-3">
-                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-emerald-500 pl-2">Kế hoạch của Điện lực</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {tongHopDetail.group2.map((item, idx) => (
-                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
-                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
-                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Group 4 (Infrastructure/Plan) before Group 3 (Other) */}
-                    <div className="space-y-3">
-                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-orange-500 pl-2">Kết quả thực hiện TTĐN lũy kế và đánh giá</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {tongHopDetail.group4.map((item, idx) => (
-                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
-                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
-                            <span className="text-[13px] font-medium text-slate-900 font-mono">{item.value || "-"}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Group 3 */}
-                    <div className="space-y-3">
-                      <h4 className="font-bold text-[13px] text-slate-500 uppercase border-l-4 border-purple-500 pl-2">Triển khai công tác</h4>
-                      <div className="grid grid-cols-1 gap-3">
-                        {tongHopDetail.group3.map((item, idx) => (
-                          <div key={idx} className="flex flex-col p-2 bg-white rounded border border-slate-100 shadow-sm">
-                            <span className="text-[11px] font-bold text-slate-400 mb-0.5">{item.label}</span>
-                            <span className="text-[13px] font-medium text-slate-900">{item.value || "-"}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-20 text-slate-400 italic bg-white border-2 border-dashed rounded-lg">
-                  Vui lòng chọn Điện lực và Tên trạm để xem đánh giá chi tiết
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           className="flex-1 overflow-hidden"
         >
@@ -2277,7 +2227,7 @@ export default function App() {
         >
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
             <Label className="whitespace-nowrap font-bold text-[#1a73e8] text-[12px] sm:text-[14px]">Chọn đơn vị thống kê:</Label>
-            <Popover open={openDienLucThongKe} onOpenChange={setOpenDienLucThongKe}>
+            <Popover open={openDienLucThongKe} onOpenChange={setOpenDienLucThongKe} modal="trap-focus">
               <PopoverTrigger 
                 render={
                   <Button
@@ -2294,6 +2244,7 @@ export default function App() {
               <PopoverContent 
                 className="w-[250px] p-0 bg-white shadow-xl z-[100]"
                 align="start"
+                sideOffset={0}
               >
                 <Command>
                   <CommandInput placeholder="Tìm đơn vị..." className="h-9" autoFocus={false} />
@@ -2551,36 +2502,35 @@ export default function App() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-0 h-[400px] overflow-hidden">
-              <div className="overflow-x-auto overflow-y-auto relative h-full">
-                <Table className="border-separate border-spacing-0">
-                  <TableHeader className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm">
-                    <TableRow>
-                      <TableHead className="w-[60px] text-center font-bold text-slate-700 bg-slate-50 border-b">STT</TableHead>
-                      <TableHead className="font-bold text-slate-700 bg-slate-50 border-b">Tên trạm</TableHead>
-                      <TableHead className="font-bold text-slate-700 bg-slate-50 border-b">Điện lực</TableHead>
-                      <TableHead className="font-bold text-slate-700 bg-slate-50 border-b">Mức đánh giá</TableHead>
-                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">TTĐN 2025%</TableHead>
-                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">TTĐN LK 2026%</TableHead>
-                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">Ước TTĐN 2026%</TableHead>
-                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">Ngưỡng TTĐN%</TableHead>
-                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">Trạng thái</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+            <CardContent className="p-0 h-[400px] overflow-auto relative">
+                <table className="w-full caption-bottom text-[12px] border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-30 bg-[#f1f3f4] shadow-sm">
+                    <tr className="hover:bg-transparent">
+                      <th className="h-10 w-[60px] text-center font-bold text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30">STT</th>
+                      <th className="h-10 font-bold text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 text-left px-4">Tên trạm</th>
+                      <th className="h-10 font-bold text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 text-left px-4">Điện lực</th>
+                      <th className="h-10 font-bold text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 text-left px-4">Mức đánh giá</th>
+                      <th className="h-10 font-bold text-center text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 px-4">TTĐN 2025%</th>
+                      <th className="h-10 font-bold text-center text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 px-4">TTĐN LK 2026%</th>
+                      <th className="h-10 font-bold text-center text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 px-4">Ước TTĐN 2026%</th>
+                      <th className="h-10 font-bold text-center text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 px-4">Ngưỡng TTĐN%</th>
+                      <th className="h-10 font-bold text-center text-[#3c4043] bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-30 px-4">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="[&_tr:last-child]:border-0">
                     {detailedStationList.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="h-40 text-center text-slate-400">
+                      <tr>
+                        <td colSpan={9} className="h-40 text-center text-slate-400">
                           Không có dữ liệu trong mục này.
-                        </TableCell>
-                      </TableRow>
+                        </td>
+                      </tr>
                     ) : (
                       detailedStationList.map((station, idx) => (
-                        <TableRow key={idx} className="hover:bg-slate-50 transition-colors text-[11px] sm:text-[12px]">
-                          <TableCell className="text-center font-mono text-slate-400 border-b">{idx + 1}</TableCell>
-                          <TableCell className="font-semibold text-slate-700 border-b">{station.name}</TableCell>
-                          <TableCell className="text-slate-500 border-b">{station.unit}</TableCell>
-                          <TableCell className="border-b">
+                        <tr key={idx} className="hover:bg-slate-50 transition-colors text-[11px] sm:text-[12px] border-b border-border">
+                          <td className="p-2 text-center font-mono text-slate-400">{idx + 1}</td>
+                          <td className="p-2 font-semibold text-slate-700">{station.name}</td>
+                          <td className="p-2 text-slate-500">{station.unit}</td>
+                          <td className="p-2">
                             <span className={cn(
                               "text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap",
                               station.assessment === "Dự kiến đạt kế hoạch cao" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
@@ -2592,12 +2542,12 @@ export default function App() {
                             )}>
                               {station.assessment}
                             </span>
-                          </TableCell>
-                          <TableCell className="text-center font-mono text-slate-600 border-b">{station.ttdn2025}</TableCell>
-                          <TableCell className="text-center font-mono text-slate-600 border-b">{station.ttdnLk2026}</TableCell>
-                          <TableCell className="text-center font-mono text-slate-600 border-b">{station.uocTtdn2026}</TableCell>
-                          <TableCell className="text-center font-mono text-slate-600 border-b font-medium">{station.nguongTtdn}</TableCell>
-                          <TableCell className="text-center border-b">
+                          </td>
+                          <td className="p-2 text-center font-mono text-slate-600">{station.ttdn2025}</td>
+                          <td className="p-2 text-center font-mono text-slate-600">{station.ttdnLk2026}</td>
+                          <td className="p-2 text-center font-mono text-slate-600">{station.uocTtdn2026}</td>
+                          <td className="p-2 text-center font-mono text-slate-600 font-medium">{station.nguongTtdn}</td>
+                          <td className="p-2 text-center">
                             {station.hasUpdate ? (
                               <span className="inline-flex items-center gap-1 text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-100 whitespace-nowrap">
                                 <Check className="w-2.5 h-2.5" />
@@ -2608,13 +2558,12 @@ export default function App() {
                                 Chưa có nội dung cập nhật
                               </span>
                             )}
-                          </TableCell>
-                        </TableRow>
+                          </td>
+                        </tr>
                       ))
                     )}
-                  </TableBody>
-                </Table>
-              </div>
+                  </tbody>
+                </table>
             </CardContent>
           </Card>
 
