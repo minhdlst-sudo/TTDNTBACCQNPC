@@ -24,7 +24,8 @@ import {
   Check,
   Download,
   Info,
-  HelpCircle
+  HelpCircle,
+  List
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
@@ -156,6 +157,8 @@ export default function App() {
   const [openDienLuc, setOpenDienLuc] = useState(false);
   const [selectedDienLucThongKe, setSelectedDienLucThongKe] = useState("all");
   const [openDienLucThongKe, setOpenDienLucThongKe] = useState(false);
+  const [selectedStatCategory, setSelectedStatCategory] = useState("Đã thực hiện");
+  const [selectedQueryCategory, setSelectedQueryCategory] = useState("SCTX");
 
   const exportToExcel = (header: string[], data: SheetData, fileName: string) => {
     if (data.length === 0) {
@@ -230,6 +233,18 @@ export default function App() {
     ]);
 
     exportToExcel(header, dataRows, "Tong_hop_Ke_hoach_Thuc_hien");
+  };
+
+  const exportClassificationToExcel = () => {
+    const header = ["STT", "Tên trạm", "Điện lực", "Dung lượng/Tên công trình", "Thực hiện"];
+    const dataRows = queryStationListDetailed.map((s, i) => [
+      String(i + 1),
+      s.name,
+      s.unit,
+      s.planValue,
+      s.implementationDetail || ""
+    ]);
+    exportToExcel(header, dataRows, `Danh_sach_tram_${selectedQueryCategory}`);
   };
 
   const [lastSync, setLastSync] = useState<Date | null>(null);
@@ -726,6 +741,90 @@ export default function App() {
     return [...stats, grandTotal];
   }, [tongHopSheet, capNhatSheet]);
 
+  const detailedStationList = useMemo(() => {
+    if (tongHopSheet.length < 2) return [];
+
+    let headerIndex = -1;
+    let idxTram = -1;
+    let idxDL = -1;
+    let idxDanhGia = 21;
+    let idxTtdn2025 = -1;
+    let idxTtdnLk2026 = -1;
+    let idxUocTtdn2026 = -1;
+    let idxNguongTtdn = -1;
+
+    for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
+      const row = tongHopSheet[i];
+      if (!row || !Array.isArray(row)) continue;
+      const normHeader = row.map(h => normalizeString(String(h || "")));
+      const t = normHeader.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
+      const dl = normHeader.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+      
+      const ttdn2025 = normHeader.findIndex(h => h.includes("ttdn 2025"));
+      const ttdnLk2026 = normHeader.findIndex(h => h.includes("ttdn lk 2026"));
+      const uocTtdn2026 = normHeader.findIndex(h => h.includes("uoc ttdn 2026"));
+      const nguongTtdn = normHeader.findIndex(h => h.includes("nguong ttdn"));
+
+      if (t !== -1) {
+        headerIndex = i;
+        idxTram = t;
+        idxDL = dl;
+        idxTtdn2025 = ttdn2025;
+        idxTtdnLk2026 = ttdnLk2026;
+        idxUocTtdn2026 = uocTtdn2026;
+        idxNguongTtdn = nguongTtdn;
+        break;
+      }
+    }
+
+    if (idxTram === -1) return [];
+
+    const getAssessment = (val: any) => {
+      const num = parseFloat(String(val).replace(/,/g, '.'));
+      if (isNaN(num)) return "Thiếu dữ liệu để đánh giá";
+      if (num >= 100) return "Dự kiến đạt kế hoạch cao";
+      if (num >= 95) return "Dự kiến đạt kế hoạch";
+      if (num >= 90) return "Khả năng đạt kế hoạch ở mức trung bình";
+      if (num >= 70) return "Khả năng đạt kế hoạch ở mức thấp";
+      return "Khả năng không đạt kế hoạch";
+    };
+
+    const implementedStations = new Set();
+    if (capNhatSheet.length > 1) {
+      const cnHeader = capNhatSheet[0].map(h => normalizeString(String(h || "")));
+      const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm"));
+      if (cnIdxTram !== -1) {
+        capNhatSheet.slice(1).forEach(r => {
+          if (r[cnIdxTram]) implementedStations.add(r[cnIdxTram].trim());
+        });
+      }
+    }
+
+    return tongHopSheet.slice(headerIndex + 1)
+      .filter(row => {
+        const company = String(row[idxDL] || "").trim();
+        if (selectedDienLucThongKe !== "all" && company !== selectedDienLucThongKe) return false;
+        
+        const stationName = String(row[idxTram] || "").trim();
+        const hasUpdate = implementedStations.has(stationName);
+        const assessment = getAssessment(row[idxDanhGia]);
+
+        if (selectedStatCategory === "Đã thực hiện") return hasUpdate;
+        if (selectedStatCategory === "Trạm chưa có nội dung cập nhật") return !hasUpdate;
+        return assessment === selectedStatCategory;
+      })
+      .map(row => ({
+        name: String(row[idxTram] || "").trim(),
+        unit: String(row[idxDL] || "").trim(),
+        assessment: getAssessment(row[idxDanhGia]),
+        hasUpdate: implementedStations.has(String(row[idxTram] || "").trim()),
+        ttdn2025: idxTtdn2025 !== -1 ? String(row[idxTtdn2025] || "") : "-",
+        ttdnLk2026: idxTtdnLk2026 !== -1 ? String(row[idxTtdnLk2026] || "") : "-",
+        uocTtdn2026: idxUocTtdn2026 !== -1 ? String(row[idxUocTtdn2026] || "") : "-",
+        nguongTtdn: idxNguongTtdn !== -1 ? String(row[idxNguongTtdn] || "") : "-"
+      }));
+  }, [tongHopSheet, capNhatSheet, selectedDienLucThongKe, selectedStatCategory]);
+
   const scoringData = useMemo(() => {
     return statisticsData
       .filter(s => s.company !== "TỔNG CỘNG")
@@ -846,6 +945,80 @@ export default function App() {
     };
   }, [dataSheet, capNhatSheet]);
 
+  const queryStationListDetailed = useMemo(() => {
+    if (dataSheet.length < 2) return [];
+
+    const activeDienLuc = activeTab === "tong-hop" ? selectedDienLucTongHop : dienLuc;
+    const header = dataSheet[0].map(h => normalizeString(String(h || "")));
+    const idxTram = header.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
+    const idxDL = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+    const idxSCTX = header.findIndex(h => h.includes("ke hoach sctx") || h.includes("kh sctx") || h === "sctx");
+    const idxSCL = header.findIndex(h => h.includes("ke hoach scl") || h.includes("kh scl") || h === "scl");
+    const idxDTXD = header.findIndex(h => h.includes("ke hoach dtxd") || h.includes("kh dtxd") || h.includes("dtxd") || h.includes("dau tu xay dung") || h.includes("xdcb"));
+
+    if (idxTram === -1) return [];
+
+    // Also need to know if it's implemented (from capNhatSheet)
+    const stationImplementations: Record<string, Record<string, string>> = {};
+
+    if (capNhatSheet.length > 1) {
+      const cnHeader = capNhatSheet[0].map(h => normalizeString(String(h || "")));
+      const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm"));
+      const cnIdxPhanLoai = cnHeader.indexOf(normalizeString("phân loại"));
+      const cnIdxNoiDung = cnHeader.findIndex(h => {
+        const norm = h.toLowerCase();
+        if (norm.includes("cong viec da thuc hien") || norm.includes("noi dung thuc hien")) return true;
+        if (norm.includes("thuc hien") && !norm.includes("ngay")) return true;
+        return false;
+      });
+      
+      if (cnIdxTram !== -1) {
+        capNhatSheet.slice(1).forEach(r => {
+          const station = String(r[cnIdxTram] || "").trim();
+          if (station) {
+            const pl = normalizeString(String(r[cnIdxPhanLoai] || ""));
+            const content = cnIdxNoiDung !== -1 ? String(r[cnIdxNoiDung] || "").trim() : "";
+            
+            if (!stationImplementations[station]) stationImplementations[station] = {};
+            
+            if (pl.includes("sctx")) stationImplementations[station]["SCTX"] = content;
+            if (pl.includes("scl")) stationImplementations[station]["SCL"] = content;
+            if (pl.includes("dtxd") || pl.includes("xdcb") || pl.includes("xaydung")) stationImplementations[station]["ĐTXD"] = content;
+          }
+        });
+      }
+    }
+
+    return dataSheet.slice(1)
+      .filter(row => {
+        const unit = String(row[idxDL] || "").trim();
+        if (activeDienLuc !== "all" && normalizeString(unit) !== normalizeString(activeDienLuc)) return false;
+
+        const stationName = String(row[idxTram] || "").trim();
+        if (!stationName) return false;
+
+        if (selectedQueryCategory === "SCTX") return idxSCTX !== -1 && row[idxSCTX] && String(row[idxSCTX]).trim() !== "";
+        if (selectedQueryCategory === "SCL") return idxSCL !== -1 && row[idxSCL] && String(row[idxSCL]).trim() !== "";
+        if (selectedQueryCategory === "ĐTXD") return idxDTXD !== -1 && row[idxDTXD] && String(row[idxDTXD]).trim() !== "";
+        
+        return false;
+      })
+      .map(row => {
+        const stationName = String(row[idxTram] || "").trim();
+        const implementations = stationImplementations[stationName] || {};
+        const contentDetail = implementations[selectedQueryCategory] || "";
+
+        return {
+          name: stationName,
+          unit: String(row[idxDL] || "").trim(),
+          planValue: selectedQueryCategory === "SCTX" ? String(row[idxSCTX] || "") : 
+                     selectedQueryCategory === "SCL" ? String(row[idxSCL] || "") : 
+                     String(row[idxDTXD] || ""),
+          implementationDetail: contentDetail
+        };
+      });
+  }, [dataSheet, capNhatSheet, dienLuc, selectedDienLucTongHop, selectedQueryCategory, activeTab]);
+
   const donViOptions = useMemo(() => {
     if (dataSheet.length < 2) return [];
     const header = dataSheet[0].map(h => h.toLowerCase());
@@ -888,6 +1061,15 @@ export default function App() {
         if (dateRange.to && rowDate > new Date(dateRange.to.setHours(23, 59, 59, 999))) return false;
         
         return true;
+      });
+    }
+    
+    // Sort by date descending (newest first)
+    if (indexNgayThucHien !== -1) {
+      result.sort((a, b) => {
+        const dateA = a[indexNgayThucHien] ? new Date(a[indexNgayThucHien]).getTime() : 0;
+        const dateB = b[indexNgayThucHien] ? new Date(b[indexNgayThucHien]).getTime() : 0;
+        return dateB - dateA;
       });
     }
     
@@ -1567,7 +1749,7 @@ export default function App() {
                                                headerName.includes("đơn vị") ||
                                                headerName.includes("điện lực") ||
                                                headerName.includes("tiến độ");
-
+                            
                             return (
                               <TableCell key={j} className={cn(
                                 "py-3 px-4 border-b border-border",
@@ -1591,6 +1773,169 @@ export default function App() {
     ) : activeTab === "tong-hop" ? (
       /* NEW: Tong Hop View */
       <section className="flex-1 flex flex-col gap-4 overflow-hidden w-full">
+        {/* Global Filter Bar for Truy Van Tab */}
+        <div className="flex flex-wrap items-center gap-4 bg-white p-3 rounded-lg border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <Label className="whitespace-nowrap font-bold text-[#1a73e8] text-[13px]">Điện lực:</Label>
+            <Popover open={openDienLucTongHop} onOpenChange={setOpenDienLucTongHop}>
+              <PopoverTrigger 
+                render={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    className="w-[200px] h-9 justify-between bg-white border-border text-[12px] font-medium"
+                  >
+                    {selectedDienLucTongHop === "all" ? "Tất cả các Điện lực" : selectedDienLucTongHop}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                }
+              />
+              <PopoverContent className="w-[200px] p-0 bg-white shadow-xl z-[100]" align="start">
+                <Command>
+                  <CommandInput placeholder="Tìm nhanh..." className="h-8 text-[12px]" autoFocus={false} />
+                  <CommandList>
+                    <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="all"
+                        onSelect={() => {
+                          setSelectedDienLucTongHop("all");
+                          setSelectedStationTongHop("");
+                          setOpenDienLucTongHop(false);
+                        }}
+                        className="cursor-pointer text-[12px]"
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", selectedDienLucTongHop === "all" ? "opacity-100" : "opacity-0")} />
+                        Tất cả các Điện lực
+                      </CommandItem>
+                      {donViOptionsTongHop.map((name) => (
+                        <CommandItem
+                          key={name}
+                          value={name}
+                          onSelect={() => {
+                            setSelectedDienLucTongHop(name);
+                            setSelectedStationTongHop("");
+                            setOpenDienLucTongHop(false);
+                          }}
+                          className="cursor-pointer text-[12px]"
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", selectedDienLucTongHop === name ? "opacity-100" : "opacity-0")} />
+                          {name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+
+        {/* Detailed Station List by Classification Card */}
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="flex-none h-[400px] min-h-0"
+          >
+            <Card className="h-full shadow-sm border-border bg-white flex flex-col">
+              <CardHeader className="bg-slate-50 border-b border-border py-2 px-4 flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center gap-2">
+                  <List className="w-4 h-4 text-blue-600" />
+                  Danh sách trạm theo hạng mục công việc
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1.5 overflow-x-auto scrollbar-hide mr-2">
+                    {["SCTX", "SCL", "ĐTXD"].map((cat) => {
+                      const activeDienLuc = activeTab === "tong-hop" ? selectedDienLucTongHop : dienLuc;
+                      const count = dataSheet.slice(1).filter(row => {
+                        const header = dataSheet[0].map(h => normalizeString(String(h || "")));
+                        const dlIdx = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+                        const unit = String(row[dlIdx] || "").trim();
+                        if (activeDienLuc !== "all" && normalizeString(unit) !== normalizeString(activeDienLuc)) return false;
+                        
+                        const colIdx = header.findIndex(h => {
+                          const n = normalizeString(cat);
+                          if (n === "sctx") return h.includes("ke hoach sctx") || h.includes("kh sctx") || h === "sctx";
+                          if (n === "scl") return h.includes("ke hoach scl") || h.includes("kh scl") || h === "scl";
+                          if (n === "dtxd") return h.includes("ke hoach dtxd") || h.includes("kh dtxd") || h.includes("dtxd") || h.includes("dau tu xay dung") || h.includes("xdcb");
+                          return false;
+                        });
+                        return colIdx !== -1 && row[colIdx] && String(row[colIdx]).trim() !== "";
+                      }).length;
+
+                      return (
+                        <Button
+                          key={cat}
+                          variant={selectedQueryCategory === cat ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedQueryCategory(cat)}
+                          className={cn(
+                            "h-7 px-3 text-[11px] font-bold transition-all shrink-0",
+                            selectedQueryCategory === cat ? "bg-blue-600 hover:bg-blue-700" : "bg-white text-slate-600 border-slate-200"
+                          )}
+                        >
+                          {cat} ({count})
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={exportClassificationToExcel}
+                    className="h-7 px-2 text-[11px] font-bold text-emerald-600 border-emerald-200 hover:bg-emerald-50 shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" />
+                    Excel
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0 flex-1 overflow-auto relative">
+                <table className="w-full border-separate border-spacing-0 text-[12px]">
+                  <TableHeader className="bg-[#f1f3f4] sticky top-0 z-20 shadow-sm">
+                    <TableRow className="hover:bg-transparent border-b-2 border-border">
+                      <TableHead className="w-[50px] text-center font-bold text-[#3c4043] bg-[#f1f3f4] sticky top-0 z-20 border-b-2 border-border py-2">STT</TableHead>
+                      <TableHead className="font-bold text-[#3c4043] bg-[#f1f3f4] sticky top-0 z-20 min-w-[150px] border-b-2 border-border py-2">Tên trạm</TableHead>
+                      <TableHead className="font-bold text-[#3c4043] bg-[#f1f3f4] sticky top-0 z-20 min-w-[150px] border-b-2 border-border py-2">Điện lực</TableHead>
+                      <TableHead className="font-bold text-center text-[#3c4043] bg-[#f1f3f4] sticky top-0 z-20 min-w-[300px] border-b-2 border-border py-2">Dung lượng/Tên công trình</TableHead>
+                      <TableHead className="font-bold text-center text-[#3c4043] bg-[#f1f3f4] sticky top-0 z-20 min-w-[300px] border-b-2 border-border py-2">Thực hiện</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {queryStationListDetailed.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-32 text-center text-slate-400 italic">
+                          Không có trạm nào thuộc diện {selectedQueryCategory} {selectedDienLucTongHop !== "all" ? `tại ${selectedDienLucTongHop}` : ""}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      queryStationListDetailed.map((station, idx) => (
+                        <TableRow key={idx} className="hover:bg-blue-50/20 transition-colors text-[11px] sm:text-[12px]">
+                          <TableCell className="text-center font-mono text-slate-400 py-2 border-b border-slate-100">{idx + 1}</TableCell>
+                          <TableCell className="font-semibold text-slate-700 py-2 border-b border-slate-100 whitespace-normal break-words">{station.name}</TableCell>
+                          <TableCell className="text-slate-500 py-2 border-b border-slate-100 whitespace-normal break-words">{station.unit}</TableCell>
+                          <TableCell className="text-left font-medium text-slate-600 py-2 border-b border-slate-100 whitespace-normal break-words leading-relaxed">{station.planValue}</TableCell>
+                          <TableCell className="text-left font-medium text-emerald-600 py-2 border-b border-slate-100 whitespace-normal break-words leading-relaxed">
+                            {station.implementationDetail ? (
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-500" />
+                                <span>{station.implementationDetail}</span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 italic">Chưa có cập nhật</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </table>
+              </CardContent>
+            </Card>
+          </motion.div>
+
         {/* Comparison Summary Card */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -1748,67 +2093,7 @@ export default function App() {
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <Label className="whitespace-nowrap font-bold text-[#1a73e8]">Điện lực:</Label>
-                  <Popover open={openDienLucTongHop} onOpenChange={setOpenDienLucTongHop}>
-                    <PopoverTrigger 
-                      render={
-                        <Button
-                          type="button"
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openDienLucTongHop}
-                          className="w-[200px] h-10 justify-between bg-white border-border text-[13px]"
-                        >
-                          {selectedDienLucTongHop === "all" ? "Tất cả điện lực" : selectedDienLucTongHop}
-                          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      }
-                    />
-                    <PopoverContent 
-                      className="w-[200px] p-0 bg-white shadow-xl z-[100]"
-                      align="start"
-                    >
-                      <Command>
-                        <CommandInput placeholder="Tìm điện lực..." className="h-9" autoFocus={false} />
-                        <CommandList>
-                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              value="all"
-                              onSelect={() => {
-                                setSelectedDienLucTongHop("all");
-                                setSelectedStationTongHop("");
-                                setOpenDienLucTongHop(false);
-                              }}
-                              className="cursor-pointer"
-                            >
-                              <Check className={cn("mr-2 h-4 w-4", selectedDienLucTongHop === "all" ? "opacity-100" : "opacity-0")} />
-                              Tất cả điện lực
-                            </CommandItem>
-                            {donViOptionsTongHop.map((name) => (
-                              <CommandItem
-                                key={name}
-                                value={name}
-                                onSelect={() => {
-                                  setSelectedDienLucTongHop(name);
-                                  setSelectedStationTongHop("");
-                                  setOpenDienLucTongHop(false);
-                                }}
-                                className="cursor-pointer"
-                              >
-                                <Check className={cn("mr-2 h-4 w-4", selectedDienLucTongHop === name ? "opacity-100" : "opacity-0")} />
-                                {name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Label className="whitespace-nowrap font-bold text-[#1a73e8]">Chọn trạm:</Label>
+                  <Label className="whitespace-nowrap font-bold text-[#1a73e8] text-[13px]">Chọn trạm để xem chi tiết:</Label>
                   <Popover open={openSearchTongHop} onOpenChange={setOpenSearchTongHop}>
                     <PopoverTrigger 
                       render={
@@ -1817,7 +2102,7 @@ export default function App() {
                           variant="outline"
                           role="combobox"
                           aria-expanded={openSearchTongHop}
-                          className="w-[300px] h-10 justify-between bg-white border-border text-[13px]"
+                          className="w-[300px] h-9 justify-between bg-white border-border text-[12px]"
                         >
                           {selectedStationTongHop ? selectedStationTongHop : "Tìm tên trạm..."}
                           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -1829,7 +2114,7 @@ export default function App() {
                       align="start"
                     >
                       <Command>
-                        <CommandInput placeholder="Gõ tên trạm..." className="h-9" autoFocus={false} />
+                        <CommandInput placeholder="Gõ tên trạm..." className="h-9 text-[12px]" autoFocus={false} />
                         <CommandList>
                           <CommandEmpty>Không tìm thấy.</CommandEmpty>
                           <CommandGroup>
@@ -1841,7 +2126,7 @@ export default function App() {
                                   setSelectedStationTongHop(name);
                                   setOpenSearchTongHop(false);
                                 }}
-                                className="cursor-pointer"
+                                className="cursor-pointer text-[12px]"
                               >
                                 <Check className={cn("mr-2 h-4 w-4", selectedStationTongHop === name ? "opacity-100" : "opacity-0")} />
                                 {name}
@@ -2210,6 +2495,122 @@ export default function App() {
                         ))}
                       </TableRow>
                     ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Detailed Station List Card */}
+          <Card className="xl:col-span-3 shadow-sm border-border bg-white mt-2">
+            <CardHeader className="bg-slate-50 border-b border-border py-3 px-4">
+              <div className="flex flex-col gap-4">
+                <CardTitle className="text-[15px] font-bold text-slate-800 flex items-center gap-2">
+                  <List className="w-5 h-5 text-blue-600" />
+                  Danh sách chi tiết trạm - {selectedStatCategory}
+                </CardTitle>
+                
+                {/* Category Selective Tabs */}
+                <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-2 scrollbar-hide">
+                  {[
+                    { id: "Đã thực hiện", color: "bg-blue-100 text-blue-700 border-blue-200" },
+                    { id: "Trạm chưa có nội dung cập nhật", color: "bg-slate-100 text-slate-600 border-slate-200" },
+                    { id: "Dự kiến đạt kế hoạch cao", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+                    { id: "Dự kiến đạt kế hoạch", color: "bg-sky-100 text-sky-700 border-sky-200" },
+                    { id: "Khả năng đạt kế hoạch ở mức trung bình", color: "bg-amber-100 text-amber-700 border-amber-200" },
+                    { id: "Khả năng đạt kế hoạch ở mức thấp", color: "bg-orange-100 text-orange-700 border-orange-200" },
+                    { id: "Khả năng không đạt kế hoạch", color: "bg-red-100 text-red-700 border-red-200" },
+                    { id: "Thiếu dữ liệu để đánh giá", color: "bg-slate-200 text-slate-800 border-slate-300" }
+                  ].map((cat) => {
+                    const currentStat = statisticsData.find(s => s.company === (selectedDienLucThongKe === "all" ? "TỔNG CỘNG" : selectedDienLucThongKe));
+                    let count = 0;
+                    if (currentStat) {
+                      if (cat.id === "Đã thực hiện") count = currentStat.implementedCount;
+                      else if (cat.id === "Trạm chưa có nội dung cập nhật") count = currentStat.totalStations - currentStat.implementedCount;
+                      else count = currentStat.counts[cat.id as keyof typeof currentStat.counts] || 0;
+                    }
+
+                    return (
+                      <Button
+                        key={cat.id}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedStatCategory(cat.id)}
+                        className={cn(
+                          "h-8 text-[11px] font-medium whitespace-nowrap transition-all border shrink-0",
+                          selectedStatCategory === cat.id 
+                            ? cn("ring-2 ring-primary ring-offset-1 shadow-sm", cat.color) 
+                            : "bg-white text-slate-500 hover:bg-slate-50"
+                        )}
+                      >
+                        {cat.id} <span className="ml-1 opacity-60">({count})</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 h-[400px] overflow-hidden">
+              <div className="overflow-x-auto overflow-y-auto relative h-full">
+                <Table className="border-separate border-spacing-0">
+                  <TableHeader className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm">
+                    <TableRow>
+                      <TableHead className="w-[60px] text-center font-bold text-slate-700 bg-slate-50 border-b">STT</TableHead>
+                      <TableHead className="font-bold text-slate-700 bg-slate-50 border-b">Tên trạm</TableHead>
+                      <TableHead className="font-bold text-slate-700 bg-slate-50 border-b">Điện lực</TableHead>
+                      <TableHead className="font-bold text-slate-700 bg-slate-50 border-b">Mức đánh giá</TableHead>
+                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">TTĐN 2025%</TableHead>
+                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">TTĐN LK 2026%</TableHead>
+                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">Ước TTĐN 2026%</TableHead>
+                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">Ngưỡng TTĐN%</TableHead>
+                      <TableHead className="font-bold text-center text-slate-700 bg-slate-50 border-b">Trạng thái</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detailedStationList.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="h-40 text-center text-slate-400">
+                          Không có dữ liệu trong mục này.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      detailedStationList.map((station, idx) => (
+                        <TableRow key={idx} className="hover:bg-slate-50 transition-colors text-[11px] sm:text-[12px]">
+                          <TableCell className="text-center font-mono text-slate-400 border-b">{idx + 1}</TableCell>
+                          <TableCell className="font-semibold text-slate-700 border-b">{station.name}</TableCell>
+                          <TableCell className="text-slate-500 border-b">{station.unit}</TableCell>
+                          <TableCell className="border-b">
+                            <span className={cn(
+                              "text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap",
+                              station.assessment === "Dự kiến đạt kế hoạch cao" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                              station.assessment === "Dự kiến đạt kế hoạch" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                              station.assessment === "Khả năng đạt kế hoạch ở mức trung bình" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                              station.assessment === "Khả năng đạt kế hoạch ở mức thấp" ? "bg-orange-50 text-orange-700 border-orange-200" :
+                              station.assessment === "Khả năng không đạt kế hoạch" ? "bg-red-50 text-red-700 border-red-200" :
+                              "bg-slate-50 text-slate-600 border-slate-200"
+                            )}>
+                              {station.assessment}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center font-mono text-slate-600 border-b">{station.ttdn2025}</TableCell>
+                          <TableCell className="text-center font-mono text-slate-600 border-b">{station.ttdnLk2026}</TableCell>
+                          <TableCell className="text-center font-mono text-slate-600 border-b">{station.uocTtdn2026}</TableCell>
+                          <TableCell className="text-center font-mono text-slate-600 border-b font-medium">{station.nguongTtdn}</TableCell>
+                          <TableCell className="text-center border-b">
+                            {station.hasUpdate ? (
+                              <span className="inline-flex items-center gap-1 text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-100 whitespace-nowrap">
+                                <Check className="w-2.5 h-2.5" />
+                                Đã thực hiện
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded text-[10px] font-medium border border-slate-100 whitespace-nowrap">
+                                Chưa có nội dung cập nhật
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
