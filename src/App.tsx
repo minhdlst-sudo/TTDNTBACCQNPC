@@ -234,6 +234,29 @@ export default function App() {
     exportToExcel(header, dataRows, "Tong_hop_Ke_hoach_Thuc_hien");
   };
 
+  const exportDetailedStationListToExcel = () => {
+    if (detailedStationList.length === 0) {
+      toast.error("Không có dữ liệu để xuất");
+      return;
+    }
+    const header = [
+      "STT", "Tên trạm", "Điện lực", "Mức đánh giá", 
+      "TTĐN 2025%", "TTĐN LK 2026%", "Ước TTĐN 2026%", "Ngưỡng TTĐN%", "Trạng thái"
+    ];
+    const data = detailedStationList.map((s, idx) => [
+      String(idx + 1),
+      s.name,
+      s.unit,
+      s.assessment,
+      s.ttdn2025,
+      s.ttdnLk2026,
+      s.uocTtdn2026,
+      s.nguongTtdn,
+      s.hasUpdate ? "Đã thực hiện" : "Chưa thực hiện"
+    ]);
+    exportToExcel(header, data, `Danh_sach_chi_tiet_tram_${selectedStatCategory}`);
+  };
+
   const exportClassificationToExcel = () => {
     const header = ["STT", "Tên trạm", "Điện lực", "Dung lượng/Tên công trình", "Thực hiện"];
     const dataRows = queryStationListDetailed.map((s, i) => [
@@ -2457,10 +2480,21 @@ export default function App() {
           <Card className="xl:col-span-3 shadow-sm border-border bg-white mt-2">
             <CardHeader className="bg-slate-50 border-b border-border py-3 px-4">
               <div className="flex flex-col gap-4">
-                <CardTitle className="text-[15px] font-bold text-slate-800 flex items-center gap-2">
-                  <List className="w-5 h-5 text-blue-600" />
-                  Danh sách chi tiết trạm - {selectedStatCategory}
-                </CardTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <CardTitle className="text-[15px] font-bold text-slate-800 flex items-center gap-2">
+                    <List className="w-5 h-5 text-blue-600" />
+                    Danh sách chi tiết trạm - {selectedStatCategory}
+                  </CardTitle>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={exportDetailedStationListToExcel}
+                    className="h-8 px-2 text-[11px] font-bold text-emerald-600 border-emerald-200 hover:bg-emerald-50 shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" />
+                    Xuất Excel
+                  </Button>
+                </div>
                 
                 {/* Category Selective Tabs */}
                 <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-2 scrollbar-hide">
