@@ -1056,7 +1056,7 @@ export default function App() {
     const indexDienLuc = header.indexOf(normalizeString("điện lực"));
     const indexNgayThucHien = header.indexOf(normalizeString("ngày thực hiện"));
     
-    let result = capNhatSheet.slice(1).filter(row => {
+    let result = capNhatSheet.slice(1).reverse().filter(row => {
       if (!row || row.length === 0) return false;
       const nonEmptyCount = row.filter(cell => cell && String(cell).trim() !== "").length;
       return nonEmptyCount > 1;
@@ -1469,7 +1469,7 @@ export default function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
-            className="flex-none h-[350px] min-h-0"
+            className="flex-none h-[600px] min-h-0"
           >
             <Card className="h-full shadow-sm border-border rounded-lg overflow-hidden flex flex-col">
               <CardHeader className="flex flex-row items-center justify-between py-3 px-4 bg-[#fafafa] border-b border-border space-y-0">
@@ -1625,7 +1625,8 @@ export default function App() {
                                              headerName.includes("vướng mắc") || 
                                              headerName.includes("đề xuất") ||
                                              headerName.includes("nguyên nhân") ||
-                                             headerName.includes("kế hoạch");
+                                             headerName.includes("kế hoạch") ||
+                                             headerName.includes("công việc");
                             
                             const isMediumText = headerName.includes("tên trạm") || 
                                                headerName.includes("đơn vị") ||
@@ -1712,7 +1713,8 @@ export default function App() {
                                              headerName.includes("vướng mắc") || 
                                              headerName.includes("đề xuất") ||
                                              headerName.includes("nguyên nhân") ||
-                                             headerName.includes("kế hoạch");
+                                             headerName.includes("kế hoạch") ||
+                                             headerName.includes("công việc");
                             
                             const isMediumText = headerName.includes("tên trạm") || 
                                                headerName.includes("đơn vị") ||
