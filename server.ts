@@ -135,6 +135,36 @@ app.post("/api/sheets/cap-nhat", async (req, res) => {
   }
 });
 
+app.put("/api/sheets/cap-nhat", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const { rowIndex, dienLuc, tenTram, ngayCapNhat, ngayThucHien, phanLoai, giaiPhap, vuongMac, deXuat } = req.body;
+
+    if (rowIndex === undefined || rowIndex < 1) {
+      return res.status(400).json({ error: "Invalid row index" });
+    }
+
+    // rowIndex is 0-based index in the capNhatSheet array (where 0 is header)
+    // Row 1 is header in Excel, so rowIndex + 1 is the 1-based row number
+    const rowNumber = rowIndex + 1;
+    const range = `'cap nhat'!A${rowNumber}:I${rowNumber}`;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: range,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[dienLuc, tenTram, ngayCapNhat, ngayThucHien, phanLoai, giaiPhap, vuongMac, deXuat]],
+      },
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error updating 'cap nhat' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 async function startServer() {
   const PORT = 3000;
 

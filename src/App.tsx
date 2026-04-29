@@ -23,6 +23,7 @@ import {
   Database,
   Search,
   Check,
+  Edit2,
   Download,
   Info,
   HelpCircle,
@@ -136,6 +137,16 @@ export default function App() {
   const [vuongMac, setVuongMac] = useState("");
   const [deXuat, setDeXuat] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [editingRow, setEditingRow] = useState<{ data: any[], rowIndex: number } | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    dienLuc: "",
+    tenTram: "",
+    ngayThucHien: new Date(),
+    phanLoai: "",
+    giaiPhap: "",
+    vuongMac: "",
+    deXuat: ""
+  });
 
   // Filter state
   const [filterTenTram, setFilterTenTram] = useState("all");
@@ -324,6 +335,61 @@ export default function App() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleEditOpen = (item: { data: any[], originalIndex: number }) => {
+    const row = item.data;
+    // Assuming columns are: dienLuc, tenTram, ngayCapNhat, ngayThucHien, phanLoai, giaiPhap, vuongMac, deXuat
+    // Looking at server.ts: [dienLuc, tenTram, ngayCapNhat, ngayThucHien, phanLoai, giaiPhap, vuongMac, deXuat]
+    setEditingRow({ data: row, rowIndex: item.originalIndex });
+    setEditFormData({
+      dienLuc: String(row[0] || ""),
+      tenTram: String(row[1] || ""),
+      ngayThucHien: row[3] ? new Date(row[3]) : new Date(),
+      phanLoai: String(row[4] || ""),
+      giaiPhap: String(row[5] || ""),
+      vuongMac: String(row[6] || ""),
+      deXuat: String(row[7] || "")
+    });
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRow) return;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/sheets/cap-nhat", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rowIndex: editingRow.rowIndex,
+          dienLuc: editFormData.dienLuc,
+          tenTram: editFormData.tenTram,
+          ngayCapNhat: format(new Date(), "yyyy-MM-dd HH:mm:ss"), // Update update time
+          ngayThucHien: format(editFormData.ngayThucHien, "yyyy-MM-dd"),
+          phanLoai: editFormData.phanLoai,
+          giaiPhap: editFormData.giaiPhap,
+          vuongMac: editFormData.vuongMac,
+          deXuat: editFormData.deXuat
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update data");
+      }
+
+      toast.success("Cập nhật dữ liệu thành công!");
+      setEditingRow(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Lỗi khi cập nhật dữ liệu", {
+        description: err.message
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1056,7 +1122,15 @@ export default function App() {
     const indexDienLuc = header.indexOf(normalizeString("điện lực"));
     const indexNgayThucHien = header.indexOf(normalizeString("ngày thực hiện"));
     
-    let result = capNhatSheet.slice(1).reverse().filter(row => {
+    let result = capNhatSheet.slice(1).map((row, idx) => ({
+      data: row,
+      originalIndex: idx + 1 // +1 because slice(1) starts from the second row (index 1)
+    }));
+
+    result.reverse();
+
+    result = result.filter(item => {
+      const row = item.data;
       if (!row || row.length === 0) return false;
       const nonEmptyCount = row.filter(cell => cell && String(cell).trim() !== "").length;
       return nonEmptyCount > 1;
@@ -1064,20 +1138,20 @@ export default function App() {
     
     if (dienLuc !== "all" && indexDienLuc !== -1) {
       const normDL = normalizeString(dienLuc);
-      result = result.filter(row => row[indexDienLuc] && normalizeString(String(row[indexDienLuc])) === normDL);
+      result = result.filter(item => item.data[indexDienLuc] && normalizeString(String(item.data[indexDienLuc])) === normDL);
     }
 
     if (filterTenTram !== "all" && indexTenTram !== -1) {
-      result = result.filter(row => row[indexTenTram] === filterTenTram);
+      result = result.filter(item => item.data[indexTenTram] === filterTenTram);
     }
 
     // Date range filtering
     if (indexNgayThucHien !== -1 && (dateRange.from || dateRange.to)) {
-      result = result.filter(row => {
-        const dateStr = row[indexNgayThucHien];
+      result = result.filter(item => {
+        const dateStr = item.data[indexNgayThucHien];
         if (!dateStr) return false;
         const rowDate = new Date(dateStr);
-        if (isNaN(rowDate.getTime())) return true; // Keep if invalid date to avoid losing data? Or hide it? Let's hide it.
+        if (isNaN(rowDate.getTime())) return true;
         
         if (dateRange.from && rowDate < new Date(dateRange.from.setHours(0, 0, 0, 0))) return false;
         if (dateRange.to && rowDate > new Date(dateRange.to.setHours(23, 59, 59, 999))) return false;
@@ -1089,8 +1163,8 @@ export default function App() {
     // Sort by date descending (newest first)
     if (indexNgayThucHien !== -1) {
       result.sort((a, b) => {
-        const dateA = a[indexNgayThucHien] ? new Date(a[indexNgayThucHien]).getTime() : 0;
-        const dateB = b[indexNgayThucHien] ? new Date(b[indexNgayThucHien]).getTime() : 0;
+        const dateA = a.data[indexNgayThucHien] ? new Date(a.data[indexNgayThucHien]).getTime() : 0;
+        const dateB = b.data[indexNgayThucHien] ? new Date(b.data[indexNgayThucHien]).getTime() : 0;
         return dateB - dateA;
       });
     }
@@ -1462,6 +1536,127 @@ export default function App() {
           </motion.div>
         </section>
 
+        {/* Edit Dialog */}
+        <Dialog open={!!editingRow} onOpenChange={(open) => !open && setEditingRow(null)}>
+          <DialogContent className="max-w-2xl bg-white">
+            <DialogHeader>
+              <DialogTitle>Hiệu chỉnh nội dung cập nhật</DialogTitle>
+              <DialogDescription>
+                Bạn đang hiệu chỉnh dữ liệu cho trạm <strong>{editFormData.tenTram}</strong>
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleEditSubmit} className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[12px] font-medium text-[#5f6368]">Điện lực</Label>
+                  <Input 
+                    value={editFormData.dienLuc} 
+                    disabled 
+                    className="bg-slate-50 text-[13px]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[12px] font-medium text-[#5f6368]">Tên trạm</Label>
+                  <Input 
+                    value={editFormData.tenTram} 
+                    disabled 
+                    className="bg-slate-50 text-[13px]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[12px] font-medium text-[#5f6368]">Ngày thực hiện</Label>
+                  <Popover>
+                    <PopoverTrigger 
+                      render={
+                        <Button
+                          variant="outline"
+                          className="w-full h-9 justify-start text-left font-normal bg-white border-border text-[13px]"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4 text-[#5f6368]" />
+                          {format(editFormData.ngayThucHien, "dd/MM/yyyy")}
+                        </Button>
+                      }
+                    />
+                    <PopoverContent className="w-auto p-0 bg-white" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={editFormData.ngayThucHien}
+                        onSelect={(date) => date && setEditFormData({...editFormData, ngayThucHien: date})}
+                        locale={vi}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[12px] font-medium text-[#5f6368]">Phân loại</Label>
+                  <Select 
+                    value={editFormData.phanLoai} 
+                    onValueChange={(val) => setEditFormData({...editFormData, phanLoai: val})}
+                  >
+                    <SelectTrigger className="h-9 text-[13px] bg-white border-border">
+                      <SelectValue placeholder="Chọn phân loại" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      {phanLoaiOptions.map((opt) => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[12px] font-bold text-[#1a73e8]">Giải pháp đã thực hiện</Label>
+                <Textarea 
+                  value={editFormData.giaiPhap} 
+                  onChange={(e) => setEditFormData({...editFormData, giaiPhap: e.target.value})} 
+                  className="min-h-[100px] text-[13px] bg-white border-border"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[12px] font-bold text-[#1a73e8]">Vướng mắc khó khăn</Label>
+                <Textarea 
+                  value={editFormData.vuongMac} 
+                  onChange={(e) => setEditFormData({...editFormData, vuongMac: e.target.value})} 
+                  className="min-h-[100px] text-[13px] bg-white border-border"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[12px] font-bold text-[#1a73e8]">Đề xuất</Label>
+                <Textarea 
+                  value={editFormData.deXuat} 
+                  onChange={(e) => setEditFormData({...editFormData, deXuat: e.target.value})} 
+                  className="min-h-[100px] text-[13px] bg-white border-border"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setEditingRow(null)}
+                  disabled={submitting}
+                >
+                  Hủy bỏ
+                </Button>
+                <Button 
+                  type="submit" 
+                  className="bg-primary hover:bg-primary/90 text-white"
+                  disabled={submitting}
+                >
+                  {submitting ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Lưu thay đổi
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         {/* Data Panels */}
         <section className="flex-1 flex flex-col gap-4 overflow-hidden">
           {/* Cap Nhat Table Card */}
@@ -1484,7 +1679,7 @@ export default function App() {
                     variant="outline"
                     size="sm"
                     className="h-8 text-[12px] bg-white border-border text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                    onClick={() => exportToExcel(capNhatSheet[0] || [], filteredCapNhat, "Du_lieu_moi_cap_nhat")}
+                    onClick={() => exportToExcel(capNhatSheet[0] || [], filteredCapNhat.map(i => i.data), "Du_lieu_moi_cap_nhat")}
                   >
                     <Download className="w-3.5 h-3.5 mr-1.5" />
                     Xuất Excel
@@ -1598,6 +1793,7 @@ export default function App() {
                 <table className="w-full caption-bottom text-[12px] border-separate border-spacing-0">
                   <TableHeader className="bg-[#f1f3f4] sticky top-0 z-20 shadow-sm">
                     <TableRow className="hover:bg-transparent border-b-2 border-border">
+                      <TableHead className="h-10 font-bold text-[#3c4043] px-4 whitespace-nowrap bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-20">Thao tác</TableHead>
                       {capNhatSheet[0]?.map((header, i) => (
                         <TableHead key={i} className="h-10 font-bold text-[#3c4043] px-4 whitespace-nowrap bg-[#f1f3f4] border-b-2 border-border sticky top-0 z-20">{header}</TableHead>
                       ))}
@@ -1606,20 +1802,30 @@ export default function App() {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={capNhatSheet[0]?.length || 4} className="h-24 text-center">
+                        <TableCell colSpan={(capNhatSheet[0]?.length || 4) + 1} className="h-24 text-center">
                           <RefreshCw className="w-5 h-5 animate-spin mx-auto text-primary/30" />
                         </TableCell>
                       </TableRow>
                     ) : filteredCapNhat.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={capNhatSheet[0]?.length || 4} className="h-24 text-center text-slate-500">
+                        <TableCell colSpan={(capNhatSheet[0]?.length || 4) + 1} className="h-24 text-center text-slate-500">
                           Chưa có dữ liệu nào phù hợp.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredCapNhat.map((row, i) => (
-                        <TableRow key={i} className="hover:bg-blue-50/30 border-b border-border transition-colors">
-                          {row.map((cell, j) => {
+                      filteredCapNhat.map((item, i) => (
+                        <TableRow key={i} className="hover:bg-blue-50/30 border-b border-border transition-colors text-[11px] sm:text-[12px]">
+                          <TableCell className="py-3 px-4 border-b border-border text-center">
+                             <Button 
+                               variant="ghost" 
+                               size="icon" 
+                               className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                               onClick={() => handleEditOpen(item)}
+                             >
+                               <Edit2 className="w-3.5 h-3.5" />
+                             </Button>
+                          </TableCell>
+                          {item.data.map((cell, j) => {
                             const headerName = capNhatSheet[0]?.[j]?.toLowerCase() || "";
                             const isLongText = headerName.includes("giải pháp") || 
                                              headerName.includes("vướng mắc") || 
