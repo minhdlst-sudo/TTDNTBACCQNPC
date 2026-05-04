@@ -925,7 +925,8 @@ export default function App() {
         total: {
           SCTX: { plan: 0, actual: 0 },
           SCL: { plan: 0, actual: 0 },
-          DTXD: { plan: 0, actual: 0 }
+          DTXD: { plan: 0, actual: 0 },
+          VUONG_DTXD: { plan: 0, actual: 0 }
         },
         byUnit: []
       };
@@ -965,14 +966,16 @@ export default function App() {
       unitStats[u] = {
         SCTX: { plan: new Set(), actual: new Set() },
         SCL: { plan: new Set(), actual: new Set() },
-        DTXD: { plan: new Set(), actual: new Set() }
+        DTXD: { plan: new Set(), actual: new Set() },
+        VUONG_DTXD: { plan: new Set(), actual: new Set() }
       };
     });
 
     const totalSets = {
       SCTX: { plan: new Set(), actual: new Set() },
       SCL: { plan: new Set(), actual: new Set() },
-      DTXD: { plan: new Set(), actual: new Set() }
+      DTXD: { plan: new Set(), actual: new Set() },
+      VUONG_DTXD: { plan: new Set(), actual: new Set() }
     };
 
     // Count in data sheet (Plan)
@@ -1012,8 +1015,13 @@ export default function App() {
           totalSets.SCL.actual.add(station);
           if (unitStats[unit]) unitStats[unit].SCL.actual.add(station);
         } else if (pl.includes("dtxd") || pl.includes("xdcb") || pl.includes("xaydung")) {
-          totalSets.DTXD.actual.add(station);
-          if (unitStats[unit]) unitStats[unit].DTXD.actual.add(station);
+          if (pl.includes("vuong dtxd")) {
+            totalSets.VUONG_DTXD.actual.add(station);
+            if (unitStats[unit]) unitStats[unit].VUONG_DTXD.actual.add(station);
+          } else {
+            totalSets.DTXD.actual.add(station);
+            if (unitStats[unit]) unitStats[unit].DTXD.actual.add(station);
+          }
         }
       }
     });
@@ -1022,13 +1030,15 @@ export default function App() {
       total: {
         SCTX: { plan: totalSets.SCTX.plan.size, actual: totalSets.SCTX.actual.size },
         SCL: { plan: totalSets.SCL.plan.size, actual: totalSets.SCL.actual.size },
-        DTXD: { plan: totalSets.DTXD.plan.size, actual: totalSets.DTXD.actual.size }
+        DTXD: { plan: totalSets.DTXD.plan.size, actual: totalSets.DTXD.actual.size },
+        VUONG_DTXD: { plan: totalSets.VUONG_DTXD.plan.size, actual: totalSets.VUONG_DTXD.actual.size }
       },
       byUnit: unitList.map(u => ({
         unit: u,
         SCTX: { plan: unitStats[u].SCTX.plan.size, actual: unitStats[u].SCTX.actual.size },
         SCL: { plan: unitStats[u].SCL.plan.size, actual: unitStats[u].SCL.actual.size },
-        DTXD: { plan: unitStats[u].DTXD.plan.size, actual: unitStats[u].DTXD.actual.size }
+        DTXD: { plan: unitStats[u].DTXD.plan.size, actual: unitStats[u].DTXD.actual.size },
+        VUONG_DTXD: { plan: unitStats[u].VUONG_DTXD.plan.size, actual: unitStats[u].VUONG_DTXD.actual.size }
       }))
     };
   }, [dataSheet, capNhatSheet]);
@@ -1071,7 +1081,8 @@ export default function App() {
             
             if (pl.includes("sctx")) stationImplementations[station]["SCTX"] = content;
             if (pl.includes("scl")) stationImplementations[station]["SCL"] = content;
-            if (pl.includes("dtxd") || pl.includes("xdcb") || pl.includes("xaydung")) stationImplementations[station]["ĐTXD"] = content;
+            if (pl.includes("vuong dtxd")) stationImplementations[station]["Vướng ĐTXD"] = content;
+            else if (pl.includes("dtxd") || pl.includes("xdcb") || pl.includes("xaydung")) stationImplementations[station]["ĐTXD"] = content;
           }
         });
       }
@@ -1088,6 +1099,7 @@ export default function App() {
         if (selectedQueryCategory === "SCTX") return idxSCTX !== -1 && row[idxSCTX] && String(row[idxSCTX]).trim() !== "";
         if (selectedQueryCategory === "SCL") return idxSCL !== -1 && row[idxSCL] && String(row[idxSCL]).trim() !== "";
         if (selectedQueryCategory === "ĐTXD") return idxDTXD !== -1 && row[idxDTXD] && String(row[idxDTXD]).trim() !== "";
+        if (selectedQueryCategory === "Vướng ĐTXD") return stationImplementations[stationName] && !!stationImplementations[stationName]["Vướng ĐTXD"];
         
         return false;
       })
@@ -1204,7 +1216,7 @@ export default function App() {
     return result;
   }, [dataSheet, filterDonVi, dienLuc, filterTenTram]);
 
-  const phanLoaiOptions = ["QLVH", "KD", "SCTX", "SCL", "ĐTXD"];
+  const phanLoaiOptions = ["QLVH", "KD", "SCTX", "SCL", "ĐTXD", "Vướng ĐTXD"];
 
   if (error && error.includes("credentials missing")) {
     return (
@@ -2170,23 +2182,49 @@ export default function App() {
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1.5 overflow-x-auto scrollbar-hide mr-2">
-                    {["SCTX", "SCL", "ĐTXD"].map((cat) => {
+                    {["SCTX", "SCL", "ĐTXD", "Vướng ĐTXD"].map((cat) => {
                       const activeDienLuc = activeTab === "tong-hop" ? selectedDienLucTongHop : dienLuc;
-                      const count = dataSheet.slice(1).filter(row => {
-                        const header = dataSheet[0].map(h => normalizeString(String(h || "")));
-                        const dlIdx = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
-                        const unit = String(row[dlIdx] || "").trim();
-                        if (activeDienLuc !== "all" && normalizeString(unit) !== normalizeString(activeDienLuc)) return false;
-                        
-                        const colIdx = header.findIndex(h => {
-                          const n = normalizeString(cat);
-                          if (n === "sctx") return h.includes("ke hoach sctx") || h.includes("kh sctx") || h === "sctx";
-                          if (n === "scl") return h.includes("ke hoach scl") || h.includes("kh scl") || h === "scl";
-                          if (n === "dtxd") return h.includes("ke hoach dtxd") || h.includes("kh dtxd") || h.includes("dtxd") || h.includes("dau tu xay dung") || h.includes("xdcb");
-                          return false;
-                        });
-                        return colIdx !== -1 && row[colIdx] && String(row[colIdx]).trim() !== "";
-                      }).length;
+                      
+                      // Count logic
+                      let count = 0;
+                      if (cat === "Vướng ĐTXD") {
+                        count = dataSheet.slice(1).filter(row => {
+                          const header = dataSheet[0].map(h => normalizeString(String(h || "")));
+                          const tramIdx = header.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
+                          const dlIdx = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+                          
+                          const stationName = String(row[tramIdx === -1 ? 0 : tramIdx] || "").trim();
+                          const unit = String(row[dlIdx === -1 ? 0 : dlIdx] || "").trim();
+                          if (activeDienLuc !== "all" && normalizeString(unit) !== normalizeString(activeDienLuc)) return false;
+                          
+                          if (!capNhatSheet || capNhatSheet.length < 2) return false;
+                          const cnHeader = capNhatSheet[0].map(h => normalizeString(String(h || "")));
+                          const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm"));
+                          const cnIdxPl = cnHeader.indexOf(normalizeString("phân loại"));
+                          if (cnIdxTram === -1 || cnIdxPl === -1) return false;
+                          
+                          return capNhatSheet.slice(1).some(r => {
+                            return normalizeString(String(r[cnIdxTram] || "")) === normalizeString(stationName) && 
+                                   normalizeString(String(r[cnIdxPl] || "")).includes("vuong dtxd");
+                          });
+                        }).length;
+                      } else {
+                        count = dataSheet.slice(1).filter(row => {
+                          const header = dataSheet[0].map(h => normalizeString(String(h || "")));
+                          const dlIdx = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+                          const unit = String(row[dlIdx] || "").trim();
+                          if (activeDienLuc !== "all" && normalizeString(unit) !== normalizeString(activeDienLuc)) return false;
+                          
+                          const colIdx = header.findIndex(h => {
+                            const n = normalizeString(cat);
+                            if (n === "sctx") return h.includes("ke hoach sctx") || h.includes("kh sctx") || h === "sctx";
+                            if (n === "scl") return h.includes("ke hoach scl") || h.includes("kh scl") || h === "scl";
+                            if (n === "dtxd") return h.includes("ke hoach dtxd") || h.includes("kh dtxd") || h.includes("dtxd") || h.includes("dau tu xay dung") || h.includes("xdcb");
+                            return false;
+                          });
+                          return colIdx !== -1 && row[colIdx] && String(row[colIdx]).trim() !== "";
+                        }).length;
+                      }
 
                       return (
                         <Button
@@ -2273,24 +2311,27 @@ export default function App() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {[
                   { label: "Sửa chữa thường xuyên (SCTX)", data: planComparison.total.SCTX, color: "blue" },
                   { label: "Sửa chữa lớn (SCL)", data: planComparison.total.SCL, color: "emerald" },
-                  { label: "Đầu tư xây dựng (ĐTXD)", data: planComparison.total.DTXD, color: "orange" }
+                  { label: "Đầu tư xây dựng (ĐTXD)", data: planComparison.total.DTXD, color: "orange" },
+                  { label: "Vướng ĐTXD", data: planComparison.total.VUONG_DTXD, color: "rose" }
                 ].map((item, idx) => (
                   <div key={idx} className={cn(
                     "p-3 rounded-lg border flex flex-col gap-2 transition-all hover:shadow-md",
                     item.color === "blue" ? "bg-blue-50/30 border-blue-100" :
                     item.color === "emerald" ? "bg-emerald-50/30 border-emerald-100" :
-                    "bg-orange-50/30 border-orange-100"
+                    item.color === "orange" ? "bg-orange-50/30 border-orange-100" :
+                    "bg-rose-50/30 border-rose-100"
                   )}>
                     <div className="flex items-center justify-between">
                       <span className={cn(
                         "text-[12px] font-bold uppercase",
                         item.color === "blue" ? "text-blue-700" :
                         item.color === "emerald" ? "text-emerald-700" :
-                        "text-orange-700"
+                        item.color === "orange" ? "text-orange-700" :
+                        "text-rose-700"
                       )}>{item.label}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-1">
@@ -2305,7 +2346,8 @@ export default function App() {
                             "text-[18px] font-bold",
                             item.color === "blue" ? "text-blue-600" :
                             item.color === "emerald" ? "text-emerald-600" :
-                            "text-orange-600"
+                            item.color === "orange" ? "text-orange-600" :
+                            "text-rose-600"
                           )}>{item.data.actual}</span>
                           <span className="text-[10px] text-slate-400">trạm</span>
                         </div>
@@ -2317,14 +2359,15 @@ export default function App() {
                           "h-full rounded-full transition-all duration-1000",
                           item.color === "blue" ? "bg-blue-500" :
                           item.color === "emerald" ? "bg-emerald-500" :
-                          "bg-orange-500"
+                          item.color === "orange" ? "bg-orange-500" :
+                          "bg-rose-500"
                         )}
-                        style={{ width: `${item.data.plan > 0 ? Math.min(100, (item.data.actual / item.data.plan) * 100) : 0}%` }}
+                        style={{ width: `${item.data.plan > 0 ? Math.min(100, (item.data.actual / item.data.plan) * 100) : item.data.actual > 0 ? 100 : 0}%` }}
                       />
                     </div>
                     <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
-                       <span>Tỷ lệ hoàn thành:</span>
-                       <span>{item.data.plan > 0 ? ((item.data.actual / item.data.plan) * 100).toFixed(1) : "0"}%</span>
+                       <span>{item.data.plan > 0 ? "Tỷ lệ hoàn thành:" : "Số lượng vướng:"}</span>
+                       <span>{item.data.plan > 0 ? ((item.data.actual / item.data.plan) * 100).toFixed(1) + "%" : item.data.actual}</span>
                     </div>
                   </div>
                 ))}
@@ -2366,9 +2409,12 @@ export default function App() {
                     <TableHead className="text-[11px] font-bold uppercase text-center text-blue-600 py-3 px-2 border-l" colSpan={2}>SCTX</TableHead>
                     <TableHead className="text-[11px] font-bold uppercase text-center text-emerald-600 py-3 px-2 border-l" colSpan={2}>SCL</TableHead>
                     <TableHead className="text-[11px] font-bold uppercase text-center text-orange-600 py-3 px-2 border-l" colSpan={2}>ĐTXD</TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-center text-rose-600 py-3 px-2 border-l" colSpan={2}>Vướng ĐTXD</TableHead>
                   </TableRow>
                   <TableRow className="bg-slate-50/30">
                     <TableHead className="py-2 px-4"></TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400 border-l">KH</TableHead>
+                    <TableHead className="text-[10px] text-center font-medium text-slate-400">TH</TableHead>
                     <TableHead className="text-[10px] text-center font-medium text-slate-400 border-l">KH</TableHead>
                     <TableHead className="text-[10px] text-center font-medium text-slate-400">TH</TableHead>
                     <TableHead className="text-[10px] text-center font-medium text-slate-400 border-l">KH</TableHead>
@@ -2387,6 +2433,8 @@ export default function App() {
                       <TableCell className="py-2 px-2 text-center text-[12px] font-bold text-emerald-600">{u.SCL.actual}</TableCell>
                       <TableCell className="py-2 px-2 text-center text-[12px] text-slate-600 border-l">{u.DTXD.plan}</TableCell>
                       <TableCell className="py-2 px-2 text-center text-[12px] font-bold text-orange-600">{u.DTXD.actual}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] text-slate-600 border-l">{u.VUONG_DTXD.plan}</TableCell>
+                      <TableCell className="py-2 px-2 text-center text-[12px] font-bold text-rose-600">{u.VUONG_DTXD.actual}</TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="bg-slate-100/50 font-bold">
@@ -2397,6 +2445,8 @@ export default function App() {
                     <TableCell className="py-3 px-2 text-center text-[13px] text-emerald-700">{planComparison.total.SCL.actual}</TableCell>
                     <TableCell className="py-3 px-2 text-center text-[13px] border-l">{planComparison.total.DTXD.plan}</TableCell>
                     <TableCell className="py-3 px-2 text-center text-[13px] text-orange-700">{planComparison.total.DTXD.actual}</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] border-l">{planComparison.total.VUONG_DTXD.plan}</TableCell>
+                    <TableCell className="py-3 px-2 text-center text-[13px] text-rose-700">{planComparison.total.VUONG_DTXD.actual}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
