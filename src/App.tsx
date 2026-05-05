@@ -14,6 +14,7 @@ import { AppLogo } from "./components/AppLogo";
 import { 
   Plus, 
   Table as TableIcon, 
+  BarChart as BarChartIcon, 
   RefreshCw, 
   Filter, 
   Calendar as CalendarIcon, 
@@ -125,7 +126,10 @@ export default function App() {
   const [thuVienSheet, setThuVienSheet] = useState<SheetData>([]);
   const [tongHopSheet, setTongHopSheet] = useState<SheetData>([]);
   const [luuSheet, setLuuSheet] = useState<SheetData>([]);
-  const [selectedMonthTongHop, setSelectedMonthTongHop] = useState<string>("Tháng 1");
+  const [selectedMonthTongHop, setSelectedMonthTongHop] = useState<string>(() => {
+    const prevMonth = (new Date().getMonth() || 12); // Get previous month (1-12)
+    return `Tháng ${prevMonth}`;
+  });
   const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi">("cap-nhat");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -3169,10 +3173,86 @@ export default function App() {
           className="space-y-6"
         >
           {/* TTDN Statistics Table */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="lg:col-span-2 shadow-md border-border overflow-hidden bg-white">
+              <CardHeader className="bg-slate-50 border-b border-border py-4 px-6 flex flex-row items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <BarChartIcon className="w-5 h-5 text-blue-600" />
+                    Biểu đồ TTĐN lũy kế
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="h-[350px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={tongHopMoiData.ttdnStats.filter(s => s.unit !== "TOÀN CÔNG TY")}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis 
+                        dataKey="unit" 
+                        angle={-45} 
+                        textAnchor="end" 
+                        interval={0} 
+                        height={60}
+                        tick={{ fontSize: 10 }}
+                      />
+                      <YAxis />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                      <Bar dataKey="<=4" name="≤ 4%" stackId="a" fill="#10b981" />
+                      <Bar dataKey="4<x<=5" name="4 < x ≤ 5%" stackId="a" fill="#3b82f6" />
+                      <Bar dataKey="5<x<=6" name="5 < x ≤ 6%" stackId="a" fill="#f59e0b" />
+                      <Bar dataKey="6<x<=7" name="6 < x ≤ 7%" stackId="a" fill="#f97316" />
+                      <Bar dataKey=">7" name="> 7%" stackId="a" fill="#ef4444" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-md border-border overflow-hidden bg-white">
+              <CardHeader className="bg-slate-50 border-b border-border py-4 px-6">
+                <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Database className="w-5 h-5 text-blue-600" />
+                  Cơ cấu toàn Công ty
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="h-[350px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "≤ 4%", value: tongHopMoiData.ttdnStats.find(s => s.unit === "TOÀN CÔNG TY")?.["<=4"] || 0, fill: "#10b981" },
+                          { name: "4-5%", value: tongHopMoiData.ttdnStats.find(s => s.unit === "TOÀN CÔNG TY")?.["4<x<=5"] || 0, fill: "#3b82f6" },
+                          { name: "5-6%", value: tongHopMoiData.ttdnStats.find(s => s.unit === "TOÀN CÔNG TY")?.["5<x<=6"] || 0, fill: "#f59e0b" },
+                          { name: "6-7%", value: tongHopMoiData.ttdnStats.find(s => s.unit === "TOÀN CÔNG TY")?.["6<x<=7"] || 0, fill: "#f97316" },
+                          { name: "> 7%", value: tongHopMoiData.ttdnStats.find(s => s.unit === "TOÀN CÔNG TY")?.[">7"] || 0, fill: "#ef4444" },
+                        ].filter(d => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card className="shadow-md border-border overflow-hidden bg-white">
             <CardHeader className="bg-slate-50 border-b border-border py-4 px-6 flex flex-row items-center justify-between">
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2 uppercase tracking-wide">
+                <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
                   <TableIcon className="w-5 h-5 text-blue-600" />
                   Kết quả lũy kế tháng
                 </CardTitle>
