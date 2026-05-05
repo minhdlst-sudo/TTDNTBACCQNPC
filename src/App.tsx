@@ -124,7 +124,9 @@ export default function App() {
   const [capNhatSheet, setCapNhatSheet] = useState<SheetData>([]);
   const [thuVienSheet, setThuVienSheet] = useState<SheetData>([]);
   const [tongHopSheet, setTongHopSheet] = useState<SheetData>([]);
-  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke">("cap-nhat");
+  const [luuSheet, setLuuSheet] = useState<SheetData>([]);
+  const [selectedMonthTongHop, setSelectedMonthTongHop] = useState<string>("Tháng 1");
+  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi">("cap-nhat");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -288,14 +290,15 @@ export default function App() {
     try {
       // Add timestamp to bypass browser cache
       const ts = Date.now();
-      const [dataRes, capNhatRes, thuVienRes, tongHopRes] = await Promise.all([
+      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes] = await Promise.all([
         fetch(`/api/sheets/data?t=${ts}`),
         fetch(`/api/sheets/cap-nhat?t=${ts}`),
         fetch(`/api/sheets/thu-vien?t=${ts}`),
-        fetch(`/api/sheets/tong-hop?t=${ts}`)
+        fetch(`/api/sheets/tong-hop?t=${ts}`),
+        fetch(`/api/sheets/luu?t=${ts}`)
       ]);
 
-      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok) {
+      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok) {
         const dataErr = await dataRes.json();
         throw new Error(dataErr.error || "Failed to fetch data from sheets");
       }
@@ -304,18 +307,21 @@ export default function App() {
       const capNhat = await capNhatRes.json();
       const thuVien = await thuVienRes.json();
       const tongHop = await tongHopRes.json();
+      const luu = await luuRes.json();
 
       console.log("Data fetched:", { 
         dataRows: data.length, 
         capNhatRows: capNhat.length, 
         thuVienRows: thuVien.length,
-        tongHopRows: tongHop.length
+        tongHopRows: tongHop.length,
+        luuRows: luu.length
       });
 
       setDataSheet(data);
       setCapNhatSheet(capNhat);
       setThuVienSheet(thuVien);
       setTongHopSheet(tongHop);
+      setLuuSheet(luu);
       setLastSync(new Date());
       
       if (ts) {
@@ -1216,6 +1222,140 @@ export default function App() {
     return result;
   }, [dataSheet, filterDonVi, dienLuc, filterTenTram]);
 
+  const tongHopMoiData = useMemo(() => {
+    if (luuSheet.length < 2) return { ttdnStats: [], comparisonStats: [], availableMonths: [] };
+
+    // Strict months list as requested
+    const availableMonths = Array.from({ length: 12 }, (_, i) => `Tháng ${i + 1}`);
+
+    // 1. TTDN Statistics from Luu sheet (Col B to H)
+    // Indices: G=6 (Month), B=1 (Unit), F=5 (TTDN %)
+    const idxLuuMonth = 6; // G
+    const idxLuuUnit = 1; // B
+    const idxLuuMetric = 5; // F
+    
+    // 2. Plan and 2025 Data from Thu vien sheet
+    // Indices for Plan: F=5 (Unit), G=6 (<=4), H=7 (4-5), I=8 (5-6), J=9 (6-7), K=10 (>7)
+    // Indices for 2025: M=12 (Unit), N=13 (4-5), O=14 (5-6), P=15 (6-7), Q=16 (>7)
+    const unitPlans: Record<string, any> = {};
+    const unit2025s: Record<string, any> = {};
+
+    if (thuVienSheet.length > 1) {
+      thuVienSheet.slice(1).forEach(row => {
+        // Plan Data (Col F-J)
+        const unitPlan = String(row[5] || "").trim();
+        if (unitPlan && unitPlan !== "Đơn vị" && unitPlan !== "ĐV") {
+          unitPlans[unitPlan] = {
+            "<=4": 0,
+            "4<x<=5": parseInt(String(row[6] || "0")),
+            "5<x<=6": parseInt(String(row[7] || "0")),
+            "6<x<=7": parseInt(String(row[8] || "0")),
+            ">7": parseInt(String(row[9] || "0"))
+          };
+        }
+
+        // 2025 Data (Col M-Q)
+        const unit2025 = String(row[12] || "").trim();
+        if (unit2025 && unit2025 !== "Đơn vị" && unit2025 !== "ĐV") {
+          unit2025s[unit2025] = {
+            "<=4": 0,
+            "4<x<=5": parseInt(String(row[13] || "0")),
+            "5<x<=6": parseInt(String(row[14] || "0")),
+            "6<x<=7": parseInt(String(row[15] || "0")),
+            ">7": parseInt(String(row[16] || "0"))
+          };
+        }
+      });
+    }
+
+    const unitStatsMap: Record<string, any> = {};
+
+    luuSheet.slice(1).forEach(row => {
+      const monthRaw = String(row[idxLuuMonth] || "").trim();
+      
+      // Robust month matching: handle "Tháng 1", "Tháng 01", "1", "01", etc.
+      const normalizeMonth = (m: string) => {
+        const match = m.match(/\d+/);
+        return match ? parseInt(match[0], 10).toString() : m.toLowerCase();
+      };
+
+      if (normalizeMonth(monthRaw) !== normalizeMonth(selectedMonthTongHop)) return;
+
+      const unit = String(row[idxLuuUnit] || "").trim();
+      if (!unit || unit === "Đơn vị") return;
+
+      if (!unitStatsMap[unit]) {
+        unitStatsMap[unit] = {
+          unit: unit,
+          "<=4": 0,
+          "4<x<=5": 0,
+          "5<x<=6": 0,
+          "6<x<=7": 0,
+          ">7": 0,
+          total: 0
+        };
+      }
+
+      const val = row[idxLuuMetric];
+      const category = (v: any) => {
+        // Clean value: remove %, replace comma with dot
+        const cleanVal = String(v || "").replace(/,/g, '.').replace('%', '').trim();
+        const num = parseFloat(cleanVal);
+        if (isNaN(num)) return null;
+        if (num <= 4) return "<=4";
+        if (num <= 5) return "4<x<=5";
+        if (num <= 6) return "5<x<=6";
+        if (num <= 7) return "6<x<=7";
+        return ">7";
+      };
+
+      const cat = category(val);
+      if (cat) {
+        unitStatsMap[unit][cat]++;
+        unitStatsMap[unit].total++;
+      }
+    });
+
+    const ttdnStats = Object.values(unitStatsMap).map(stat => {
+      const plan = unitPlans[stat.unit] || { "<=4": 0, "4<x<=5": 0, "5<x<=6": 0, "6<x<=7": 0, ">7": 0 };
+      const perf2025 = unit2025s[stat.unit] || { "<=4": 0, "4<x<=5": 0, "5<x<=6": 0, "6<x<=7": 0, ">7": 0 };
+      return {
+        ...stat,
+        plans: plan,
+        perf2025: perf2025
+      };
+    });
+    
+    const companyTotal = {
+      unit: "TOÀN CÔNG TY",
+      "<=4": ttdnStats.reduce((acc, curr) => acc + curr["<=4"], 0),
+      "4<x<=5": ttdnStats.reduce((acc, curr) => acc + curr["4<x<=5"], 0),
+      "5<x<=6": ttdnStats.reduce((acc, curr) => acc + curr["5<x<=6"], 0),
+      "6<x<=7": ttdnStats.reduce((acc, curr) => acc + curr["6<x<=7"], 0),
+      ">7": ttdnStats.reduce((acc, curr) => acc + curr[">7"], 0),
+      total: ttdnStats.reduce((acc, curr) => acc + curr.total, 0),
+      plans: {
+        "<=4": ttdnStats.reduce((acc, curr) => acc + curr.plans["<=4"], 0),
+        "4<x<=5": ttdnStats.reduce((acc, curr) => acc + curr.plans["4<x<=5"], 0),
+        "5<x<=6": ttdnStats.reduce((acc, curr) => acc + curr.plans["5<x<=6"], 0),
+        "6<x<=7": ttdnStats.reduce((acc, curr) => acc + curr.plans["6<x<=7"], 0),
+        ">7": ttdnStats.reduce((acc, curr) => acc + curr.plans[">7"], 0)
+      },
+      perf2025: {
+        "<=4": ttdnStats.reduce((acc, curr) => acc + curr.perf2025["<=4"], 0),
+        "4<x<=5": ttdnStats.reduce((acc, curr) => acc + curr.perf2025["4<x<=5"], 0),
+        "5<x<=6": ttdnStats.reduce((acc, curr) => acc + curr.perf2025["5<x<=6"], 0),
+        "6<x<=7": ttdnStats.reduce((acc, curr) => acc + curr.perf2025["6<x<=7"], 0),
+        ">7": ttdnStats.reduce((acc, curr) => acc + curr.perf2025[">7"], 0)
+      }
+    };
+
+    return { 
+      ttdnStats: ttdnStats.length > 0 ? [...ttdnStats, companyTotal] : [], 
+      availableMonths
+    };
+  }, [luuSheet, thuVienSheet, selectedMonthTongHop]);
+
   const phanLoaiOptions = ["QLVH", "KD", "SCTX", "SCL", "ĐTXD", "Vướng ĐTXD"];
 
   if (error && error.includes("credentials missing")) {
@@ -1300,6 +1440,15 @@ export default function App() {
               )}
             >
               Thống kê
+            </button>
+            <button 
+              onClick={() => setActiveTab("tong-hop-moi")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all",
+                activeTab === "tong-hop-moi" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Tổng hợp
             </button>
           </div>
         </div>
@@ -2498,7 +2647,7 @@ export default function App() {
           </Card>
         </motion.div>
       </section>
-    ) : (
+    ) : activeTab === "thong-ke" ? (
       <section className="flex-1 flex flex-col gap-4 sm:gap-6 p-2 sm:p-4 overflow-y-auto w-full">
         {/* Statistics Filters */}
         <motion.div
@@ -3010,6 +3159,133 @@ export default function App() {
               </div>
             </CardContent>
           </Card>
+        </motion.div>
+      </section>
+    ) : (
+      <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full bg-slate-50">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          {/* TTDN Statistics Table */}
+          <Card className="shadow-md border-border overflow-hidden bg-white">
+            <CardHeader className="bg-slate-50 border-b border-border py-4 px-6 flex flex-row items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2 uppercase tracking-wide">
+                  <TableIcon className="w-5 h-5 text-blue-600" />
+                  Kết quả lũy kế tháng
+                </CardTitle>
+                
+                {/* Month Dropdown */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-slate-500 whitespace-nowrap">Chọn tháng:</span>
+                  <Select value={selectedMonthTongHop} onValueChange={setSelectedMonthTongHop}>
+                    <SelectTrigger className="h-8 w-[140px] text-[13px] bg-white border-slate-200">
+                      <SelectValue placeholder="Chọn tháng" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      {tongHopMoiData.availableMonths.map(m => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-emerald-600 border-emerald-200"
+                onClick={() => exportToExcel(
+                  ["Đơn vị", "<=4% (TH)", "4-5% (TH)", "4-5% (KH)", "4-5% (2025)", "5-6% (TH)", "5-6% (KH)", "5-6% (2025)", "6-7% (TH)", "6-7% (KH)", "6-7% (2025)", ">7% (TH)", ">7% (KH)", ">7% (2025)", "Tổng (TH)"], 
+                  tongHopMoiData.ttdnStats.map(s => [
+                    s.unit, 
+                    s["<=4"], 
+                    s["4<x<=5"], s.plans["4<x<=5"], s.perf2025["4<x<=5"],
+                    s["5<x<=6"], s.plans["5<x<=6"], s.perf2025["5<x<=6"],
+                    s["6<x<=7"], s.plans["6<x<=7"], s.perf2025["6<x<=7"],
+                    s[">7"], s.plans[">7"], s.perf2025[">7"],
+                    s.total
+                  ]), 
+                  "Ket_qua_luy_ke_thang"
+                )}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Xuất Excel
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0 max-h-[600px] overflow-auto">
+              <Table>
+                <TableHeader className="sticky top-0 z-10">
+                  <TableRow className="bg-slate-100 hover:bg-slate-100 border-b-2 border-slate-200">
+                    <TableHead className="font-bold text-slate-700 py-4 px-6 bg-slate-100">Đơn vị</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">TTĐN % &le; 4</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">4 &lt; TTĐN % &le; 5</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">5 &lt; TTĐN % &le; 6</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">6 &lt; TTĐN % &le; 7</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">TTĐN % &gt; 7</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 px-6 bg-slate-100">Tổng số trạm</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tongHopMoiData.ttdnStats.map((stat, idx) => (
+                    <TableRow key={idx} className={cn(
+                      "hover:bg-slate-50 transition-colors",
+                      stat.unit === "TOÀN CÔNG TY" ? "bg-blue-50 font-bold border-t-2 border-blue-200" : ""
+                    )}>
+                      <TableCell className="py-3 px-6 text-[14px]">
+                        {stat.unit}
+                      </TableCell>
+                      <TableCell className="text-center py-2">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[14px] text-emerald-600 font-bold">{stat["<=4"]}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center py-2">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[14px] text-blue-600 font-bold">{stat["4<x<=5"]}</span>
+                          <div className="flex flex-col items-center gap-0.5 border-t border-slate-100 w-full mt-0.5 pt-0.5">
+                            <span className="text-[9px] text-slate-400">KH: {stat.plans["4<x<=5"]}</span>
+                            <span className="text-[9px] text-blue-400">2025: {stat.perf2025["4<x<=5"]}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center py-2">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[14px] text-amber-600 font-bold">{stat["5<x<=6"]}</span>
+                          <div className="flex flex-col items-center gap-0.5 border-t border-slate-100 w-full mt-0.5 pt-0.5">
+                            <span className="text-[9px] text-slate-400">KH: {stat.plans["5<x<=6"]}</span>
+                            <span className="text-[9px] text-blue-400">2025: {stat.perf2025["5<x<=6"]}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center py-2">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[14px] text-orange-600 font-bold">{stat["6<x<=7"]}</span>
+                          <div className="flex flex-col items-center gap-0.5 border-t border-slate-100 w-full mt-0.5 pt-0.5">
+                            <span className="text-[9px] text-slate-400">KH: {stat.plans["6<x<=7"]}</span>
+                            <span className="text-[9px] text-blue-400">2025: {stat.perf2025["6<x<=7"]}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center py-2">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[14px] text-red-600 font-bold">{stat[">7"]}</span>
+                          <div className="flex flex-col items-center gap-0.5 border-t border-slate-100 w-full mt-0.5 pt-0.5">
+                            <span className="text-[9px] text-slate-400">KH: {stat.plans[">7"]}</span>
+                            <span className="text-[9px] text-blue-400">2025: {stat.perf2025[">7"]}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center py-3 px-6 font-bold text-slate-700">{stat.total}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
         </motion.div>
       </section>
     )}

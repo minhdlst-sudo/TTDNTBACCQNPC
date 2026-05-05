@@ -165,6 +165,22 @@ app.put("/api/sheets/cap-nhat", async (req, res) => {
   }
 });
 
+app.get("/api/sheets/luu", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "'Luu'!A:AZ",
+    });
+    const values = response.data.values || [];
+    console.log(`Fetched ${values.length} rows from 'Luu' sheet at ${new Date().toISOString()}`);
+    res.json(values);
+  } catch (error: any) {
+    console.error("Error fetching 'Luu' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 async function startServer() {
   const PORT = 3000;
 
