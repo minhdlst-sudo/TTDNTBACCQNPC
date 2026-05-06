@@ -181,6 +181,22 @@ app.get("/api/sheets/luu", async (req, res) => {
   }
 });
 
+app.get("/api/sheets/lk-cda", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "'LK CDA'!A:G",
+    });
+    const values = response.data.values || [];
+    console.log(`Fetched ${values.length} rows from 'LK CDA' sheet at ${new Date().toISOString()}`);
+    res.json(values);
+  } catch (error: any) {
+    console.error("Error fetching 'LK CDA' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 async function startServer() {
   const PORT = 3000;
 

@@ -73,7 +73,8 @@ import {
   ResponsiveContainer, 
   Cell,
   PieChart,
-  Pie
+  Pie,
+  LabelList
 } from "recharts";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -126,11 +127,13 @@ export default function App() {
   const [thuVienSheet, setThuVienSheet] = useState<SheetData>([]);
   const [tongHopSheet, setTongHopSheet] = useState<SheetData>([]);
   const [luuSheet, setLuuSheet] = useState<SheetData>([]);
+  const [lkCdaSheet, setLkCdaSheet] = useState<SheetData>([]);
   const [selectedMonthTongHop, setSelectedMonthTongHop] = useState<string>(() => {
     const prevMonth = (new Date().getMonth() || 12); // Get previous month (1-12)
     return `Tháng ${prevMonth}`;
   });
-  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi">("cap-nhat");
+  const [selectedUnitCapDa, setSelectedUnitCapDa] = useState<string>("TOÀN CÔNG TY");
+  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da">("cap-nhat");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -294,15 +297,16 @@ export default function App() {
     try {
       // Add timestamp to bypass browser cache
       const ts = Date.now();
-      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes] = await Promise.all([
+      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes] = await Promise.all([
         fetch(`/api/sheets/data?t=${ts}`),
         fetch(`/api/sheets/cap-nhat?t=${ts}`),
         fetch(`/api/sheets/thu-vien?t=${ts}`),
         fetch(`/api/sheets/tong-hop?t=${ts}`),
-        fetch(`/api/sheets/luu?t=${ts}`)
+        fetch(`/api/sheets/luu?t=${ts}`),
+        fetch(`/api/sheets/lk-cda?t=${ts}`)
       ]);
 
-      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok) {
+      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok) {
         const dataErr = await dataRes.json();
         throw new Error(dataErr.error || "Failed to fetch data from sheets");
       }
@@ -312,13 +316,15 @@ export default function App() {
       const thuVien = await thuVienRes.json();
       const tongHop = await tongHopRes.json();
       const luu = await luuRes.json();
+      const lkCda = await lkCdaRes.json();
 
       console.log("Data fetched:", { 
         dataRows: data.length, 
         capNhatRows: capNhat.length, 
         thuVienRows: thuVien.length,
         tongHopRows: tongHop.length,
-        luuRows: luu.length
+        luuRows: luu.length,
+        lkCdaRows: lkCda.length
       });
 
       setDataSheet(data);
@@ -326,6 +332,7 @@ export default function App() {
       setThuVienSheet(thuVien);
       setTongHopSheet(tongHop);
       setLuuSheet(luu);
+      setLkCdaSheet(lkCda);
       setLastSync(new Date());
       
       if (ts) {
@@ -1360,6 +1367,87 @@ export default function App() {
     };
   }, [luuSheet, thuVienSheet, selectedMonthTongHop]);
 
+  const capDaReferenceData = useMemo(() => {
+    const unitPlans: Record<string, number[]> = {};
+    const unit2025s: Record<string, number[]> = {};
+
+    if (thuVienSheet.length > 0) {
+      thuVienSheet.slice(1).forEach(row => {
+        // Plan Data (Col S-W)
+        const unit = String(row[18] || "").trim();
+        if (unit && unit !== "Đơn vị") {
+          unitPlans[unit] = [
+            parseFloat(String(row[19] || "0").replace(',', '.')),
+            parseFloat(String(row[20] || "0").replace(',', '.')),
+            parseFloat(String(row[21] || "0").replace(',', '.')),
+            parseFloat(String(row[22] || "0").replace(',', '.'))
+          ];
+        }
+
+        // 2025 Data (Col Y-AC)
+        const unit2025 = String(row[24] || "").trim();
+        if (unit2025 && unit2025 !== "Đơn vị") {
+          unit2025s[unit2025] = [
+            parseFloat(String(row[25] || "0").replace(',', '.')),
+            parseFloat(String(row[26] || "0").replace(',', '.')),
+            parseFloat(String(row[27] || "0").replace(',', '.')),
+            parseFloat(String(row[28] || "0").replace(',', '.'))
+          ];
+        }
+      });
+    }
+    return { unitPlans, unit2025s };
+  }, [thuVienSheet]);
+
+  const capDaData = useMemo(() => {
+    if (lkCdaSheet.length < 2) return { stats: [], headers: [] };
+
+    const headers = lkCdaSheet[0].slice(1, 5).map(h => String(h || ""));
+    const { unitPlans, unit2025s } = capDaReferenceData;
+
+    const normalizeMonth = (m: string) => {
+      const match = m.match(/\d+/);
+      return match ? parseInt(match[0], 10).toString() : m.toLowerCase();
+    };
+
+    const targetMonth = normalizeMonth(selectedMonthTongHop);
+    const statsMap: Record<string, any> = {};
+
+    lkCdaSheet.slice(1).forEach(row => {
+      const monthRaw = String(row[5] || "").trim();
+      if (normalizeMonth(monthRaw) !== targetMonth) return;
+
+      const unit = String(row[0] || "").trim();
+      if (!unit || unit === "Đơn vị") return;
+
+      if (!statsMap[unit]) {
+        statsMap[unit] = {
+          unit,
+          values: [0, 0, 0, 0]
+        };
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const val = parseFloat(String(row[i + 1] || "0").replace(',', '.'));
+        statsMap[unit].values[i] = val;
+      }
+    });
+
+    const stats = Object.values(statsMap).map(s => {
+      const unitKey = Object.keys(unitPlans).find(k => normalizeString(k) === normalizeString(s.unit));
+      const plan = unitKey ? unitPlans[unitKey] : [0, 0, 0, 0];
+      const unitKey2025 = Object.keys(unit2025s).find(k => normalizeString(k) === normalizeString(s.unit));
+      const perf2025 = unitKey2025 ? unit2025s[unitKey2025] : [0, 0, 0, 0];
+      
+      return { ...s, plans: plan, perf2025: perf2025 };
+    });
+
+    return {
+      stats: stats,
+      headers: headers.length >= 4 ? headers : ["Cấp 1", "Cấp 2", "Cấp 3", "Cấp 4"]
+    };
+  }, [lkCdaSheet, capDaReferenceData, selectedMonthTongHop]);
+
   const phanLoaiOptions = ["QLVH", "KD", "SCTX", "SCL", "ĐTXD", "Vướng ĐTXD"];
 
   if (error && error.includes("credentials missing")) {
@@ -1453,6 +1541,15 @@ export default function App() {
               )}
             >
               Tổng hợp
+            </button>
+            <button 
+              onClick={() => setActiveTab("cap-da")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all whitespace-nowrap",
+                activeTab === "cap-da" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Cấp ĐA
             </button>
           </div>
         </div>
@@ -3165,7 +3262,7 @@ export default function App() {
           </Card>
         </motion.div>
       </section>
-    ) : (
+    ) : activeTab === "tong-hop-moi" ? (
       <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full bg-slate-50">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -3365,10 +3462,168 @@ export default function App() {
               </Table>
             </CardContent>
           </Card>
-
         </motion.div>
       </section>
-    )}
+    ) : activeTab === "cap-da" ? (
+      <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full bg-slate-50">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          {/* Biểu đồ Cấp ĐA */}
+          <Card className="shadow-md border-border overflow-hidden bg-white">
+            <CardHeader className="bg-slate-50 border-b border-border py-4 px-6 flex flex-row items-center justify-between">
+              <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <BarChartIcon className="w-5 h-5 text-blue-600" />
+                Biểu đồ theo đơn vị
+              </CardTitle>
+              
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-slate-500 whitespace-nowrap">Đơn vị:</span>
+                  <Select value={selectedUnitCapDa} onValueChange={setSelectedUnitCapDa}>
+                    <SelectTrigger className="h-8 w-[200px] text-[13px] bg-white border-slate-200">
+                      <SelectValue placeholder="Chọn đơn vị" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      {capDaData.stats.map(s => (
+                        <SelectItem key={s.unit} value={s.unit}>{s.unit}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="h-[350px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={capDaData.headers.map((h, i) => {
+                      const selectedStat = capDaData.stats.find(s => normalizeString(s.unit) === normalizeString(selectedUnitCapDa));
+                      return {
+                        name: h,
+                        "Thực hiện (TH)": selectedStat?.values[i] || 0,
+                        "Kế hoạch (KH)": selectedStat?.plans[i] || 0,
+                        "Thực hiện 2025": selectedStat?.perf2025[i] || 0
+                      };
+                    })}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend />
+                    <Bar dataKey="Thực hiện (TH)" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                      <LabelList dataKey="Thực hiện (TH)" position="top" style={{ fontSize: '10px', fill: '#3b82f6', fontWeight: 'bold' }} formatter={(v: number) => v.toFixed(2)} />
+                    </Bar>
+                    <Bar dataKey="Kế hoạch (KH)" fill="#10b981" radius={[4, 4, 0, 0]}>
+                      <LabelList dataKey="Kế hoạch (KH)" position="top" style={{ fontSize: '10px', fill: '#10b981', fontWeight: 'bold' }} formatter={(v: number) => v.toFixed(2)} />
+                    </Bar>
+                    <Bar dataKey="Thực hiện 2025" fill="#f59e0b" radius={[4, 4, 0, 0]}>
+                      <LabelList dataKey="Thực hiện 2025" position="top" style={{ fontSize: '10px', fill: '#f59e0b', fontWeight: 'bold' }} formatter={(v: number) => v.toFixed(2)} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-md border-border overflow-hidden bg-white">
+            <CardHeader className="bg-slate-50 border-b border-border py-4 px-6 flex flex-row items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <TableIcon className="w-5 h-5 text-blue-600" />
+                  TTĐN lũy kế theo cấp điện áp
+                </CardTitle>
+                
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-slate-500 whitespace-nowrap">Chọn tháng:</span>
+                  <Select value={selectedMonthTongHop} onValueChange={setSelectedMonthTongHop}>
+                    <SelectTrigger className="h-8 w-[140px] text-[13px] bg-white border-slate-200">
+                      <SelectValue placeholder="Chọn tháng" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      {tongHopMoiData.availableMonths.map(m => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-emerald-600 border-emerald-200"
+                onClick={() => exportToExcel(
+                  ["Đơn vị", ...capDaData.headers.flatMap(h => [`${h} (TH)`, `${h} (KH)`, `${h} (2025)`])], 
+                  capDaData.stats.map(s => [
+                    s.unit, 
+                    ...s.values.flatMap((v: number, i: number) => [v.toFixed(2), s.plans[i].toFixed(2), s.perf2025[i].toFixed(2)])
+                  ]), 
+                  "TTDN_Luy_ke_theo_Cap_DA"
+                )}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Xuất Excel
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0 max-h-[600px] overflow-auto">
+              <Table>
+                <TableHeader className="sticky top-0 z-10">
+                  <TableRow className="bg-slate-100 hover:bg-slate-100 border-b-2 border-slate-200">
+                    <TableHead className="font-bold text-slate-700 py-4 px-6 bg-slate-100">Đơn vị</TableHead>
+                    {capDaData.headers.map((header, i) => (
+                      <TableHead key={i} className="text-center font-bold text-slate-700 py-4 bg-slate-100">
+                        {header}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {capDaData.stats.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={capDaData.headers.length + 1} className="h-32 text-center text-slate-400 italic">
+                        Không có dữ liệu cho {selectedMonthTongHop}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    capDaData.stats.map((stat, idx) => (
+                      <TableRow key={idx} className={cn(
+                        "hover:bg-slate-50 transition-colors",
+                        normalizeString(stat.unit) === normalizeString("TOÀN CÔNG TY") ? "bg-blue-50 font-bold border-t-2 border-blue-200" : ""
+                      )}>
+                        <TableCell className="py-3 px-6 text-[14px]">
+                          {stat.unit}
+                        </TableCell>
+                        {stat.values.map((v: number, i: number) => (
+                          <TableCell key={i} className="text-center py-2">
+                            <div className="flex flex-col items-center">
+                              <span className={cn(
+                                "text-[14px] font-bold",
+                                v > stat.plans[i] ? "text-red-600" : "text-emerald-600"
+                              )}>
+                                {v.toFixed(2)}
+                              </span>
+                              <div className="flex flex-col items-center gap-0.5 border-t border-slate-100 w-full mt-0.5 pt-0.5">
+                                <span className="text-[9px] text-slate-400">KH: {stat.plans[i].toFixed(2)}</span>
+                                <span className="text-[9px] text-blue-400">2025: {stat.perf2025[i].toFixed(2)}</span>
+                              </div>
+                            </div>
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </section>
+    ) : null}
   </main>
     </div>
   );
