@@ -1490,7 +1490,7 @@ export default function App() {
             <div className="bg-white/10 p-1 rounded-lg backdrop-blur-sm shrink-0 border border-white/20">
               <AppLogo className="w-6 h-6 md:w-8 md:h-8" />
             </div>
-            <h1 className="font-bold text-[14px] sm:text-[16px] md:text-[20px] text-white tracking-tight uppercase drop-shadow-sm whitespace-nowrap overflow-hidden text-ellipsis">Quản lý TTĐN TBA công cộng - QNPC</h1>
+            <h1 className="font-bold text-[14px] sm:text-[16px] md:text-[20px] text-white tracking-tight uppercase drop-shadow-sm whitespace-nowrap overflow-hidden text-ellipsis">Quản lý TTĐN TBA cc</h1>
           </div>
           
           <Button 
@@ -1505,7 +1505,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center justify-center md:flex-1">
-          <div className="flex bg-white/15 p-1 rounded-lg w-full sm:w-auto max-w-[280px] sm:max-w-none">
+          <div className="flex bg-white/15 p-1 rounded-lg w-full sm:w-auto overflow-x-auto max-w-full sm:max-w-none no-scrollbar">
             <button 
               onClick={() => setActiveTab("cap-nhat")}
               className={cn(
