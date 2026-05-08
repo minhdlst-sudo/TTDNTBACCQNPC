@@ -703,17 +703,19 @@ export default function App() {
     };
 
     // Find indices
-    const headerRow = tongHopSheet[0]; // Temporary, will be refined if headerIndex is found
     const getIdx = (keywords: string[]) => {
+      // First try the confirmed headerIndex
       if (headerIndex !== -1) {
         const norm = tongHopSheet[headerIndex].map(h => normalizeString(String(h || "")));
-        return norm.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
+        const idx = norm.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
+        if (idx !== -1) return idx;
       }
+      // If not found, search all first 5 rows
       for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
         const norm = tongHopSheet[i].map(h => normalizeString(String(h || "")));
         const idx = norm.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
         if (idx !== -1) {
-          headerIndex = i;
+          headerIndex = i; // Update suggested headerIndex
           return idx;
         }
       }
@@ -730,8 +732,8 @@ export default function App() {
     const idxTtdnLk2026 = getIdx(["ttdn lk 2026"]);
     const idxAtt2025 = getIdx(["att 2025"]);
     const idxTtdn2025 = getIdx(["ttdn 2025"]);
-    const idxUocAtt2026 = getIdx(["uoc att 2026"]);
-    const idxUocTtdn2026 = getIdx(["uoc ttdn 2026"]);
+    const idxUocAtt2026 = getIdx(["uoc att kwh", "uoc th att", "uoc att", "att uoc"]);
+    const idxUocTtdn2026 = getIdx(["uoc ttdn", "ttdn uoc"]);
 
     if (idxTram === -1) return [];
 
@@ -768,6 +770,70 @@ export default function App() {
 
     return result;
   }, [tongHopSheet, selectedDienLucTongHop, querySortBy]);
+
+  const attTuyetDoiData = useMemo(() => {
+    if (thuVienSheet.length < 2) return { data: [], labels: { ae: "Đơn vị", af: "Att Tuyệt đối", ag: "Ghi chú" } };
+    
+    // AE=30, AF=31, AG=32 (0-indexed)
+    const header = thuVienSheet[0];
+    const aeLabel = String(header[30] || "Đơn vị");
+    const afLabel = String(header[31] || "Att Tuyệt đối");
+    const agLabel = String(header[32] || "Ghi chú");
+
+    const result = thuVienSheet.slice(1)
+      .filter(row => row[30] || row[31] || row[32])
+      .map(row => ({
+        ae: String(row[30] || ""),
+        af: String(row[31] || ""),
+        ag: String(row[32] || ""),
+      }));
+
+    result.sort((a, b) => {
+      const valA = parseFloat(String(a.af).replace(/\./g, '').replace(/,/g, '.'));
+      const valB = parseFloat(String(b.af).replace(/\./g, '').replace(/,/g, '.'));
+      return (valB || 0) - (valA || 0);
+    });
+
+    return { data: result, labels: { ae: aeLabel, af: afLabel, ag: agLabel } };
+  }, [thuVienSheet]);
+
+  const exportAttTuyetDoi = () => {
+    const header = [
+      "STT",
+      attTuyetDoiData.labels.ae,
+      attTuyetDoiData.labels.af,
+      attTuyetDoiData.labels.ag
+    ];
+    const dataRows = attTuyetDoiData.data.map((item, idx) => [
+      String(idx + 1),
+      item.ae,
+      item.af,
+      item.ag
+    ]);
+    exportToExcel(header, dataRows, "Tong_hop_Att_tuyet_doi");
+  };
+
+  const exportQueryTable = () => {
+    const header = [
+      "STT", "Điện lực", "Tên trạm", "Sđm kVA",
+      "Att LK 2026 kWh", "TTĐN LK 2026 %",
+      "Att 2025 kWh", "TTĐN 2025 %",
+      "Ước Att kWh 2026", "Ước TTĐN 2026 %"
+    ];
+    const dataRows = queryTableData.map((item, idx) => [
+      String(idx + 1),
+      item.dienLuc,
+      item.tenTram,
+      item.sdm,
+      item.attLk2026,
+      item.ttdnLk2026,
+      item.att2025,
+      item.ttdn2025,
+      item.uocAtt2026,
+      item.uocTtdn2026
+    ]);
+    exportToExcel(header, dataRows, "Bang_phan_tich_TTDN_chi_tiet");
+  };
 
   const tongHopDetail = useMemo(() => {
     if (!selectedStationTongHop || tongHopSheet.length < 2) return null;
@@ -2522,15 +2588,81 @@ export default function App() {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="flex-none mb-6"
+        >
+          <Card className="shadow-sm border-border bg-white flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-3 px-4 bg-slate-50 border-b space-y-0 text-center">
+              <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center justify-center gap-2 uppercase tracking-tight w-full relative">
+                <TableIcon className="w-4 h-4 text-emerald-600" />
+                Tổng hợp Att tuyệt đối
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportAttTuyetDoi}
+                  className="absolute right-0 h-7 text-[11px] gap-1 px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                >
+                  <Download className="w-3 h-3" />
+                  Xuất Excel
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 overflow-auto relative max-h-[400px]">
+              <Table className="w-full border-separate border-spacing-0">
+                <TableHeader className="bg-[#f8fafc] sticky top-0 z-30 shadow-sm">
+                  <TableRow className="hover:bg-transparent border-b-2 border-slate-200">
+                    <TableHead className="h-10 font-bold text-slate-700 text-center px-4 border-r border-b bg-[#f8fafc] sticky top-0 z-30">STT</TableHead>
+                    <TableHead className="h-10 font-bold text-slate-700 text-left px-4 border-r border-b bg-[#f8fafc] sticky top-0 z-30">{attTuyetDoiData.labels.ae}</TableHead>
+                    <TableHead className="h-10 font-bold text-emerald-700 text-center px-4 border-r border-b bg-emerald-50 sticky top-0 z-30">{attTuyetDoiData.labels.af}</TableHead>
+                    <TableHead className="h-10 font-bold text-slate-700 text-left px-4 border-b bg-[#f8fafc] sticky top-0 z-30">{attTuyetDoiData.labels.ag}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {attTuyetDoiData.data.length > 0 ? (
+                    attTuyetDoiData.data.map((item, idx) => (
+                      <TableRow key={idx} className="hover:bg-slate-50 transition-colors">
+                        <TableCell className="text-center py-2 border-r border-b text-slate-500 font-mono text-[11px]">{idx + 1}</TableCell>
+                        <TableCell className="py-2 border-r border-b font-medium text-slate-700">{item.ae}</TableCell>
+                        <TableCell className="text-center py-2 border-r border-b font-bold text-emerald-700 bg-emerald-50/20">{item.af}</TableCell>
+                        <TableCell className="py-2 border-b text-slate-600 text-[12px]">{item.ag}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center text-slate-400">
+                        Không có dữ liệu phù hợp
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           className="flex-none mb-6"
         >
           <Card className="shadow-sm border-border bg-white flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-3 px-4 bg-slate-50 border-b space-y-0">
-              <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center gap-2 uppercase tracking-tight">
-                <TableIcon className="w-4 h-4 text-blue-600" />
-                Bảng phân tích TTĐN chi tiết
-              </CardTitle>
+              <div className="flex items-center gap-4">
+                <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center gap-2 uppercase tracking-tight">
+                  <TableIcon className="w-4 h-4 text-blue-600" />
+                  Bảng phân tích TTĐN chi tiết
+                </CardTitle>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportQueryTable}
+                  className="h-7 text-[11px] gap-1 px-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                >
+                  <Download className="w-3 h-3" />
+                  Xuất Excel
+                </Button>
+              </div>
               
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Ưu tiên sắp xếp theo:</span>
@@ -2545,36 +2677,36 @@ export default function App() {
                 </Select>
               </div>
             </CardHeader>
-            <CardContent className="p-0 overflow-auto relative max-h-[600px] no-scrollbar">
-              <Table className="border-collapse">
-                <TableHeader className="sticky top-0 z-30 shadow-sm">
-                  <TableRow className="bg-[#f1f5f9] hover:bg-[#f1f5f9] border-b-2 border-slate-200">
-                    <TableHead className="h-10 font-bold text-slate-700 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">STT</TableHead>
-                    <TableHead className="h-10 font-bold text-slate-700 text-left px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Điện lực</TableHead>
-                    <TableHead className="h-10 font-bold text-slate-700 text-left px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Tên trạm</TableHead>
-                    <TableHead className="h-10 font-bold text-slate-700 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Sđm kVA</TableHead>
-                    <TableHead className="h-10 font-bold text-blue-700 text-center px-4 border-r bg-blue-50 sticky top-0 z-30">Att LK 2026 kWh</TableHead>
-                    <TableHead className="h-10 font-bold text-blue-800 text-center px-4 border-r bg-blue-100 sticky top-0 z-30">TTĐN LK 2026 %</TableHead>
-                    <TableHead className="h-10 font-bold text-slate-600 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Att 2025 kWh</TableHead>
-                    <TableHead className="h-10 font-bold text-slate-600 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">TTĐN 2025 %</TableHead>
-                    <TableHead className="h-10 font-bold text-orange-700 text-center px-4 border-r bg-orange-50 sticky top-0 z-30">Ước Att kWh 2026</TableHead>
-                    <TableHead className="h-10 font-bold text-orange-800 text-center bg-orange-100 sticky top-0 z-30">Ước TTĐN 2026 %</TableHead>
+            <CardContent className="p-0 overflow-auto relative max-h-[600px]">
+              <Table className="w-full border-separate border-spacing-0">
+                <TableHeader className="bg-[#f1f5f9] sticky top-0 z-30 shadow-sm text-[12px]">
+                  <TableRow className="hover:bg-transparent border-b-2 border-slate-300">
+                    <TableHead className="h-11 font-bold text-slate-700 text-center px-4 border-r border-b bg-[#f1f5f9] sticky top-0 z-30">STT</TableHead>
+                    <TableHead className="h-11 font-bold text-slate-700 text-left px-4 border-r border-b bg-[#f1f5f9] sticky top-0 z-30">Điện lực</TableHead>
+                    <TableHead className="h-11 font-bold text-slate-700 text-left px-4 border-r border-b bg-[#f1f5f9] sticky top-0 z-30">Tên trạm</TableHead>
+                    <TableHead className="h-11 font-bold text-slate-700 text-center px-4 border-r border-b bg-[#f1f5f9] sticky top-0 z-30">Sđm kVA</TableHead>
+                    <TableHead className="h-11 font-bold text-blue-700 text-center px-4 border-r border-b bg-blue-50 sticky top-0 z-30">Att LK 2026 kWh</TableHead>
+                    <TableHead className="h-11 font-bold text-blue-800 text-center px-4 border-r border-b bg-blue-100 sticky top-0 z-30">TTĐN LK 2026 %</TableHead>
+                    <TableHead className="h-11 font-bold text-slate-600 text-center px-4 border-r border-b bg-[#f1f5f9] sticky top-0 z-30">Att 2025 kWh</TableHead>
+                    <TableHead className="h-11 font-bold text-slate-600 text-center px-4 border-r border-b bg-[#f1f5f9] sticky top-0 z-30">TTĐN 2025 %</TableHead>
+                    <TableHead className="h-11 font-bold text-orange-700 text-center px-4 border-r border-b bg-orange-50 sticky top-0 z-30">Ước Att kWh 2026</TableHead>
+                    <TableHead className="h-11 font-bold text-orange-800 text-center border-b bg-orange-100 sticky top-0 z-30">Ước TTĐN 2026 %</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {queryTableData.length > 0 ? (
                     queryTableData.map((item, idx) => (
-                      <TableRow key={idx} className="hover:bg-slate-50 transition-colors border-b">
-                        <TableCell className="text-center py-2 border-r text-slate-500 font-mono text-[11px]">{idx + 1}</TableCell>
-                        <TableCell className="py-2 border-r font-medium text-slate-600 whitespace-nowrap">{item.dienLuc}</TableCell>
-                        <TableCell className="py-2 border-r font-bold text-slate-900 min-w-[200px]">{item.tenTram}</TableCell>
-                        <TableCell className="text-center py-2 border-r text-slate-600 font-mono">{item.sdm}</TableCell>
-                        <TableCell className="text-center py-2 border-r font-mono text-blue-700 bg-blue-50/10">{item.attLk2026}</TableCell>
-                        <TableCell className="text-center py-2 border-r font-bold text-blue-800 bg-blue-50/20">{item.ttdnLk2026}</TableCell>
-                        <TableCell className="text-center py-2 border-r text-slate-500 font-mono">{item.att2025}</TableCell>
-                        <TableCell className="text-center py-2 border-r text-slate-500 font-mono">{item.ttdn2025}</TableCell>
-                        <TableCell className="text-center py-2 border-r font-mono text-orange-700 bg-orange-50/10">{item.uocAtt2026}</TableCell>
-                        <TableCell className="text-center py-2 font-bold text-orange-800 bg-orange-50/20">{item.uocTtdn2026}</TableCell>
+                      <TableRow key={idx} className="hover:bg-slate-50 transition-colors">
+                        <TableCell className="text-center py-2 border-r border-b text-slate-500 font-mono text-[11px]">{idx + 1}</TableCell>
+                        <TableCell className="py-2 border-r border-b font-medium text-slate-600 whitespace-nowrap">{item.dienLuc}</TableCell>
+                        <TableCell className="py-2 border-r border-b font-bold text-slate-900 min-w-[200px]">{item.tenTram}</TableCell>
+                        <TableCell className="text-center py-2 border-r border-b text-slate-600 font-mono">{item.sdm}</TableCell>
+                        <TableCell className="text-center py-2 border-r border-b font-mono text-blue-700 bg-blue-50/10">{item.attLk2026}</TableCell>
+                        <TableCell className="text-center py-2 border-r border-b font-bold text-blue-800 bg-blue-50/20">{item.ttdnLk2026}</TableCell>
+                        <TableCell className="text-center py-2 border-r border-b text-slate-500 font-mono">{item.att2025}</TableCell>
+                        <TableCell className="text-center py-2 border-r border-b text-slate-500 font-mono">{item.ttdn2025}</TableCell>
+                        <TableCell className="text-center py-2 border-r border-b font-mono text-orange-700 bg-orange-50/10">{item.uocAtt2026}</TableCell>
+                        <TableCell className="text-center py-2 border-b font-bold text-orange-800 bg-orange-50/20">{item.uocTtdn2026}</TableCell>
                       </TableRow>
                     ))
                   ) : (
