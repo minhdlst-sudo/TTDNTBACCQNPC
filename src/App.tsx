@@ -572,6 +572,7 @@ export default function App() {
 
   const [selectedStationTongHop, setSelectedStationTongHop] = useState("");
   const [selectedDienLucTongHop, setSelectedDienLucTongHop] = useState("all");
+  const [querySortBy, setQuerySortBy] = useState<"ttdn" | "att">("ttdn");
   const [openSearchTongHop, setOpenSearchTongHop] = useState(false);
   const [openDienLucTongHop, setOpenDienLucTongHop] = useState(false);
 
@@ -657,6 +658,14 @@ export default function App() {
     }
     
     let result = tongHopSheet.slice(headerIndex + 1);
+    
+    // Find index for TTĐN LK 2026 % for sorting
+    let indexTtdnLk = -1;
+    if (headerIndex !== -1) {
+      const normalizedHeader = tongHopSheet[headerIndex].map(h => normalizeString(String(h || "")));
+      indexTtdnLk = normalizedHeader.findIndex(h => h.includes("ttdn lk 2026"));
+    }
+
     if (selectedDienLucTongHop !== "all" && indexDienLuc !== -1) {
       const normalizedDL = normalizeString(selectedDienLucTongHop);
       result = result.filter(row => {
@@ -664,8 +673,101 @@ export default function App() {
         return val && normalizeString(val) === normalizedDL;
       });
     }
+
+    // Sort by TTĐN LK 2026 % descending
+    if (indexTtdnLk !== -1) {
+      result.sort((a, b) => {
+        const valA = parseFloat(String(a[indexTtdnLk] || "0").replace(/,/g, '.'));
+        const valB = parseFloat(String(b[indexTtdnLk] || "0").replace(/,/g, '.'));
+        return (valB || 0) - (valA || 0);
+      });
+    }
+
     return result;
   }, [tongHopSheet, selectedDienLucTongHop]);
+
+  const queryTableData = useMemo(() => {
+    if (tongHopSheet.length < 2) return [];
+
+    let headerIndex = -1;
+    const findHeader = (keywords: string[]) => {
+      for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
+        const norm = tongHopSheet[i].map(h => normalizeString(String(h || "")));
+        const idx = norm.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
+        if (idx !== -1) {
+          headerIndex = i;
+          return idx;
+        }
+      }
+      return -1;
+    };
+
+    // Find indices
+    const headerRow = tongHopSheet[0]; // Temporary, will be refined if headerIndex is found
+    const getIdx = (keywords: string[]) => {
+      if (headerIndex !== -1) {
+        const norm = tongHopSheet[headerIndex].map(h => normalizeString(String(h || "")));
+        return norm.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
+      }
+      for (let i = 0; i < Math.min(tongHopSheet.length, 5); i++) {
+        const norm = tongHopSheet[i].map(h => normalizeString(String(h || "")));
+        const idx = norm.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
+        if (idx !== -1) {
+          headerIndex = i;
+          return idx;
+        }
+      }
+      return -1;
+    };
+
+    const idxDL = getIdx(["dien luc", "don vi"]);
+    // Prioritize "tên" to avoid "Mã trạm"
+    let idxTram = getIdx(["ten tram", "ten tba", "tên tba", "tên trạm"]);
+    if (idxTram === -1) idxTram = getIdx(["tba", "tram"]);
+    
+    const idxSdm = getIdx(["sdm", "kva"]);
+    const idxAttLk2026 = getIdx(["att lk 2026"]);
+    const idxTtdnLk2026 = getIdx(["ttdn lk 2026"]);
+    const idxAtt2025 = getIdx(["att 2025"]);
+    const idxTtdn2025 = getIdx(["ttdn 2025"]);
+    const idxUocAtt2026 = getIdx(["uoc att 2026"]);
+    const idxUocTtdn2026 = getIdx(["uoc ttdn 2026"]);
+
+    if (idxTram === -1) return [];
+
+    let result = tongHopSheet.slice(headerIndex + 1).map(row => ({
+      dienLuc: idxDL !== -1 ? String(row[idxDL] || "") : "-",
+      tenTram: idxTram !== -1 ? String(row[idxTram] || "") : "-",
+      sdm: idxSdm !== -1 ? String(row[idxSdm] || "") : "0",
+      attLk2026: idxAttLk2026 !== -1 ? String(row[idxAttLk2026] || "") : "0",
+      ttdnLk2026: idxTtdnLk2026 !== -1 ? String(row[idxTtdnLk2026] || "") : "0",
+      att2025: idxAtt2025 !== -1 ? String(row[idxAtt2025] || "") : "0",
+      ttdn2025: idxTtdn2025 !== -1 ? String(row[idxTtdn2025] || "") : "0",
+      uocAtt2026: idxUocAtt2026 !== -1 ? String(row[idxUocAtt2026] || "") : "0",
+      uocTtdn2026: idxUocTtdn2026 !== -1 ? String(row[idxUocTtdn2026] || "") : "0",
+    }));
+
+    // Filter by selected Dien Luc if not "all"
+    if (selectedDienLucTongHop !== "all") {
+      const normDL = normalizeString(selectedDienLucTongHop);
+      result = result.filter(item => normalizeString(item.dienLuc) === normDL);
+    }
+
+    // Sort by selected criteria descending
+    result.sort((a, b) => {
+      let valA, valB;
+      if (querySortBy === "ttdn") {
+        valA = parseFloat(String(a.ttdnLk2026).replace(/,/g, '.'));
+        valB = parseFloat(String(b.ttdnLk2026).replace(/,/g, '.'));
+      } else {
+        valA = parseFloat(String(a.attLk2026).replace(/\./g, '').replace(/,/g, '.'));
+        valB = parseFloat(String(b.attLk2026).replace(/\./g, '').replace(/,/g, '.'));
+      }
+      return (valB || 0) - (valA || 0);
+    });
+
+    return result;
+  }, [tongHopSheet, selectedDienLucTongHop, querySortBy]);
 
   const tongHopDetail = useMemo(() => {
     if (!selectedStationTongHop || tongHopSheet.length < 2) return null;
@@ -2417,6 +2519,77 @@ export default function App() {
           </Card>
         </motion.div>
 
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="flex-none mb-6"
+        >
+          <Card className="shadow-sm border-border bg-white flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-3 px-4 bg-slate-50 border-b space-y-0">
+              <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center gap-2 uppercase tracking-tight">
+                <TableIcon className="w-4 h-4 text-blue-600" />
+                Bảng phân tích TTĐN chi tiết
+              </CardTitle>
+              
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Ưu tiên sắp xếp theo:</span>
+                <Select value={querySortBy} onValueChange={(val: any) => setQuerySortBy(val)}>
+                  <SelectTrigger className="h-8 w-[170px] text-[12px] bg-white border-slate-200">
+                    <SelectValue placeholder="Tiêu chí" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    <SelectItem value="ttdn">TTĐN LK 2026 %</SelectItem>
+                    <SelectItem value="att">Att LK 2026 kWh</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-auto relative max-h-[600px] no-scrollbar">
+              <Table className="border-collapse">
+                <TableHeader className="sticky top-0 z-30 shadow-sm">
+                  <TableRow className="bg-[#f1f5f9] hover:bg-[#f1f5f9] border-b-2 border-slate-200">
+                    <TableHead className="h-10 font-bold text-slate-700 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">STT</TableHead>
+                    <TableHead className="h-10 font-bold text-slate-700 text-left px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Điện lực</TableHead>
+                    <TableHead className="h-10 font-bold text-slate-700 text-left px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Tên trạm</TableHead>
+                    <TableHead className="h-10 font-bold text-slate-700 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Sđm kVA</TableHead>
+                    <TableHead className="h-10 font-bold text-blue-700 text-center px-4 border-r bg-blue-50 sticky top-0 z-30">Att LK 2026 kWh</TableHead>
+                    <TableHead className="h-10 font-bold text-blue-800 text-center px-4 border-r bg-blue-100 sticky top-0 z-30">TTĐN LK 2026 %</TableHead>
+                    <TableHead className="h-10 font-bold text-slate-600 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">Att 2025 kWh</TableHead>
+                    <TableHead className="h-10 font-bold text-slate-600 text-center px-4 border-r bg-[#f1f5f9] sticky top-0 z-30">TTĐN 2025 %</TableHead>
+                    <TableHead className="h-10 font-bold text-orange-700 text-center px-4 border-r bg-orange-50 sticky top-0 z-30">Ước Att kWh 2026</TableHead>
+                    <TableHead className="h-10 font-bold text-orange-800 text-center bg-orange-100 sticky top-0 z-30">Ước TTĐN 2026 %</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {queryTableData.length > 0 ? (
+                    queryTableData.map((item, idx) => (
+                      <TableRow key={idx} className="hover:bg-slate-50 transition-colors border-b">
+                        <TableCell className="text-center py-2 border-r text-slate-500 font-mono text-[11px]">{idx + 1}</TableCell>
+                        <TableCell className="py-2 border-r font-medium text-slate-600 whitespace-nowrap">{item.dienLuc}</TableCell>
+                        <TableCell className="py-2 border-r font-bold text-slate-900 min-w-[200px]">{item.tenTram}</TableCell>
+                        <TableCell className="text-center py-2 border-r text-slate-600 font-mono">{item.sdm}</TableCell>
+                        <TableCell className="text-center py-2 border-r font-mono text-blue-700 bg-blue-50/10">{item.attLk2026}</TableCell>
+                        <TableCell className="text-center py-2 border-r font-bold text-blue-800 bg-blue-50/20">{item.ttdnLk2026}</TableCell>
+                        <TableCell className="text-center py-2 border-r text-slate-500 font-mono">{item.att2025}</TableCell>
+                        <TableCell className="text-center py-2 border-r text-slate-500 font-mono">{item.ttdn2025}</TableCell>
+                        <TableCell className="text-center py-2 border-r font-mono text-orange-700 bg-orange-50/10">{item.uocAtt2026}</TableCell>
+                        <TableCell className="text-center py-2 font-bold text-orange-800 bg-orange-50/20">{item.uocTtdn2026}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={10} className="h-24 text-center text-slate-400">
+                        Không có dữ liệu phù hợp
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </motion.div>
+
         {/* Detailed Station List by Classification Card */}
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -2747,6 +2920,7 @@ export default function App() {
             </CardContent>
           </Card>
         </motion.div>
+
       </section>
     ) : activeTab === "thong-ke" ? (
       <section className="flex-1 flex flex-col gap-4 sm:gap-6 p-2 sm:p-4 overflow-y-auto w-full">
@@ -3394,15 +3568,15 @@ export default function App() {
             </CardHeader>
             <CardContent className="p-0 max-h-[600px] overflow-auto">
               <Table>
-                <TableHeader className="sticky top-0 z-10">
+                <TableHeader className="sticky top-0 z-10 shadow-sm">
                   <TableRow className="bg-slate-100 hover:bg-slate-100 border-b-2 border-slate-200">
-                    <TableHead className="font-bold text-slate-700 py-4 px-6 bg-slate-100">Đơn vị</TableHead>
-                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">TTĐN % &le; 4</TableHead>
-                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">4 &lt; TTĐN % &le; 5</TableHead>
-                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">5 &lt; TTĐN % &le; 6</TableHead>
-                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">6 &lt; TTĐN % &le; 7</TableHead>
-                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100">TTĐN % &gt; 7</TableHead>
-                    <TableHead className="text-center font-bold text-slate-700 py-4 px-6 bg-slate-100">Tổng số trạm</TableHead>
+                    <TableHead className="font-bold text-slate-700 py-4 px-6 bg-slate-100 sticky top-0 z-10">Đơn vị</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100 sticky top-0 z-10">TTĐN % &le; 4</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100 sticky top-0 z-10">4 &lt; TTĐN % &le; 5</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100 sticky top-0 z-10">5 &lt; TTĐN % &le; 6</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100 sticky top-0 z-10">6 &lt; TTĐN % &le; 7</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 bg-slate-100 sticky top-0 z-10">TTĐN % &gt; 7</TableHead>
+                    <TableHead className="text-center font-bold text-slate-700 py-4 px-6 bg-slate-100 sticky top-0 z-10">Tổng số trạm</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -3572,11 +3746,11 @@ export default function App() {
             </CardHeader>
             <CardContent className="p-0 max-h-[600px] overflow-auto">
               <Table>
-                <TableHeader className="sticky top-0 z-10">
+                <TableHeader className="sticky top-0 z-10 shadow-sm">
                   <TableRow className="bg-slate-100 hover:bg-slate-100 border-b-2 border-slate-200">
-                    <TableHead className="font-bold text-slate-700 py-4 px-6 bg-slate-100">Đơn vị</TableHead>
+                    <TableHead className="font-bold text-slate-700 py-4 px-6 bg-slate-100 sticky top-0 z-10">Đơn vị</TableHead>
                     {capDaData.headers.map((header, i) => (
-                      <TableHead key={i} className="text-center font-bold text-slate-700 py-4 bg-slate-100">
+                      <TableHead key={i} className="text-center font-bold text-slate-700 py-4 bg-slate-100 sticky top-0 z-10">
                         {header}
                       </TableHead>
                     ))}
