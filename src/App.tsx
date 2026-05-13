@@ -200,7 +200,7 @@ export default function App() {
   const [newTbaSdm, setNewTbaSdm] = useState("");
   const [newTbaNgay, setNewTbaNgay] = useState("");
   const [submittingTba, setSubmittingTba] = useState(false);
-  const [editingTba, setEditingTba] = useState<{ row: any[], rowIndex: number } | null>(null);
+  const [editingTba, setEditingTba] = useState<{ row: any[], idx: number } | null>(null);
   const [editTbaData, setEditTbaData] = useState({
     dienLuc: "",
     tenTram: "",
@@ -216,7 +216,7 @@ export default function App() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rowIndex: editingTba.rowIndex,
+          rowIndex: editingTba.idx,
           dienLuc: editTbaData.dienLuc,
           tenTram: editTbaData.tenTram,
           sdm: editTbaData.sdm,
@@ -4186,14 +4186,14 @@ export default function App() {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
+                        a: selectedTbaRow[0] || "",
                         b: selectedTbaRow[1] || "",
                         c: selectedTbaRow[2] || "",
                         d: selectedTbaRow[3] || "",
-                        e: selectedTbaRow[4] || "",
-                        f: tbaMangTai,
-                        g: tbaTuanBaoCao,
-                        h: tbaNam,
-                        i: tbaGhiChu
+                        e: tbaMangTai,
+                        f: tbaTuanBaoCao,
+                        g: tbaNam,
+                        h: tbaGhiChu
                       })
                     });
                     
@@ -4394,7 +4394,7 @@ export default function App() {
               <table className="w-full border-separate border-spacing-0 text-left">
                 <thead className="sticky top-0 z-20 shadow-md">
                   <tr className="bg-slate-100">
-                    {mangTaiSheet[0]?.slice(1).map((h, i) => (
+                    {mangTaiSheet[0]?.map((h, i) => (
                       <th key={i} className="font-bold text-[#3c4043] whitespace-nowrap py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">{h}</th>
                     ))}
                   </tr>
@@ -4402,13 +4402,13 @@ export default function App() {
                 <tbody>
                   {filteredMangTaiHistory.length === 0 ? (
                     <tr>
-                      <td colSpan={mangTaiSheet[0]?.length || 9} className="h-40 text-center text-slate-400">Chưa có dữ liệu báo cáo</td>
+                      <td colSpan={mangTaiSheet[0]?.length || 8} className="h-40 text-center text-slate-400">Chưa có dữ liệu báo cáo</td>
                     </tr>
                   ) : (
                     [...filteredMangTaiHistory].reverse().map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                        {row.slice(1).map((cell, i) => {
-                          const headerText = normalizeString(String(mangTaiSheet[0]?.[i + 1] || ""));
+                        {row.map((cell, i) => {
+                          const headerText = normalizeString(String(mangTaiSheet[0]?.[i] || ""));
                           const isMangTai = headerText.includes("mang tai");
                           return (
                             <td key={i} className={cn(
