@@ -31,7 +31,7 @@ import {
   List
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { format } from "date-fns";
+import { format, getWeek } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
   Dialog,
@@ -128,12 +128,14 @@ export default function App() {
   const [tongHopSheet, setTongHopSheet] = useState<SheetData>([]);
   const [luuSheet, setLuuSheet] = useState<SheetData>([]);
   const [lkCdaSheet, setLkCdaSheet] = useState<SheetData>([]);
+  const [tbaSheet, setTbaSheet] = useState<SheetData>([]);
+  const [mangTaiSheet, setMangTaiSheet] = useState<SheetData>([]);
   const [selectedMonthTongHop, setSelectedMonthTongHop] = useState<string>(() => {
     const prevMonth = (new Date().getMonth() || 12); // Get previous month (1-12)
     return `Tháng ${prevMonth}`;
   });
   const [selectedUnitCapDa, setSelectedUnitCapDa] = useState<string>("TOÀN CÔNG TY");
-  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da">("cap-nhat");
+  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da" | "tba-xdm">("cap-nhat");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -178,6 +180,201 @@ export default function App() {
   const [openDienLucThongKe, setOpenDienLucThongKe] = useState(false);
   const [selectedStatCategory, setSelectedStatCategory] = useState("Đã thực hiện");
   const [selectedQueryCategory, setSelectedQueryCategory] = useState("SCTX");
+
+  // TBA XDM Form state
+  const [selectedTbaRow, setSelectedTbaRow] = useState<string[] | null>(null);
+  const [tbaMangTai, setTbaMangTai] = useState("");
+  const [tbaTuanBaoCao, setTbaTuanBaoCao] = useState(() => {
+    const w = getWeek(new Date());
+    const biWeekIdx = Math.ceil(w / 2);
+    const start = (biWeekIdx * 2) - 1;
+    const end = biWeekIdx * 2;
+    return `Tuần ${start}-${end}`;
+  });
+  const [tbaNam, setTbaNam] = useState(new Date().getFullYear().toString());
+  const [tbaGhiChu, setTbaGhiChu] = useState("");
+  const [openTbaSelect, setOpenTbaSelect] = useState(false);
+  const [openAddTba, setOpenAddTba] = useState(false);
+  const [newTbaDienLuc, setNewTbaDienLuc] = useState("");
+  const [newTbaTen, setNewTbaTen] = useState("");
+  const [newTbaSdm, setNewTbaSdm] = useState("");
+  const [newTbaNgay, setNewTbaNgay] = useState("");
+  const [submittingTba, setSubmittingTba] = useState(false);
+  const [editingTba, setEditingTba] = useState<{ row: any[], rowIndex: number } | null>(null);
+  const [editTbaData, setEditTbaData] = useState({
+    dienLuc: "",
+    tenTram: "",
+    sdm: "",
+    ngayDongDien: ""
+  });
+
+  const handleUpdateTba = async () => {
+    if (!editingTba) return;
+    setSubmittingTba(true);
+    try {
+      const res = await fetch("/api/sheets/tba", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rowIndex: editingTba.rowIndex,
+          dienLuc: editTbaData.dienLuc,
+          tenTram: editTbaData.tenTram,
+          sdm: editTbaData.sdm,
+          ngayDongDien: editTbaData.ngayDongDien
+        }),
+      });
+      if (res.ok) {
+        toast.success("Cập nhật TBA thành công");
+        setEditingTba(null);
+        fetchData();
+      } else {
+        toast.error("Lỗi khi cập nhật dữ liệu");
+      }
+    } catch (error) {
+      toast.error("Lỗi kết nối");
+    } finally {
+      setSubmittingTba(false);
+    }
+  };
+
+  const handleAddTba = async () => {
+    if (!newTbaDienLuc || !newTbaTen || !newTbaSdm || !newTbaNgay) {
+      toast.error("Vui lòng nhập đầy đủ thông tin");
+      return;
+    }
+    setSubmittingTba(true);
+    try {
+      const res = await fetch("/api/sheets/tba", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dienLuc: newTbaDienLuc,
+          tenTram: newTbaTen,
+          sdm: newTbaSdm,
+          ngayDongDien: newTbaNgay
+        }),
+      });
+      if (res.ok) {
+        toast.success("Khai báo TBA thành công");
+        setOpenAddTba(false);
+        // Reset form
+        setNewTbaDienLuc("");
+        setNewTbaTen("");
+        setNewTbaSdm("");
+        setNewTbaNgay("");
+        fetchData();
+      } else {
+        toast.error("Lỗi khi lưu dữ liệu");
+      }
+    } catch (error) {
+      toast.error("Lỗi kết nối");
+    } finally {
+      setSubmittingTba(false);
+    }
+  };
+
+  const [selectedTbaUnit, setSelectedTbaUnit] = useState("all");
+  const [filterMangTaiWeek, setFilterMangTaiWeek] = useState("all");
+  const [filterMangTaiOp, setFilterMangTaiOp] = useState("all");
+  const [filterMangTaiValue, setFilterMangTaiValue] = useState("");
+
+  const tbaDienLucList = useMemo(() => {
+    if (thuVienSheet.length < 2) return [];
+    const units = new Set<string>();
+    thuVienSheet.slice(1).forEach(row => {
+      const unit = String(row[0] || "").trim();
+      if (unit) units.add(unit);
+    });
+    return Array.from(units).sort((a,b) => a.localeCompare(b, 'vi'));
+  }, [thuVienSheet]);
+
+  const filteredTbaList = useMemo(() => {
+    const listWithIndex = tbaSheet.map((row, idx) => ({ row, idx }));
+    let list = listWithIndex.slice(1);
+    
+    // Find unit column in tbaSheet automatically
+    const header = tbaSheet[0] || [];
+    const idxDL = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("dien luc") || nh.includes("don vi");
+    });
+
+    if (selectedTbaUnit !== "all" && idxDL !== -1) {
+      list = list.filter(item => String(item.row[idxDL] || "").trim() === selectedTbaUnit);
+    }
+    return list;
+  }, [tbaSheet, selectedTbaUnit]);
+
+  const filteredMangTaiHistory = useMemo(() => {
+    if (mangTaiSheet.length < 2) return [];
+    let list = mangTaiSheet.slice(1);
+    
+    const header = mangTaiSheet[0] || [];
+    const idxDL = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("dien luc") || nh.includes("don vi");
+    });
+    const idxWeek = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("tuan bao cao") || nh === "tuan";
+    });
+    const idxLoad = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("mang tai") || nh.includes("tai %");
+    });
+
+    if (selectedTbaUnit !== "all" && idxDL !== -1) {
+      list = list.filter(row => String(row[idxDL] || "").trim() === selectedTbaUnit);
+    }
+
+    if (filterMangTaiWeek !== "all" && idxWeek !== -1) {
+      list = list.filter(row => String(row[idxWeek] || "").trim() === filterMangTaiWeek);
+    }
+
+    if (filterMangTaiOp !== "all" && filterMangTaiValue !== "" && idxLoad !== -1) {
+      const filterVal = parseFloat(filterMangTaiValue.replace(",", "."));
+      if (!isNaN(filterVal)) {
+        list = list.filter(row => {
+          const valStr = String(row[idxLoad] || "").replace("%", "").trim();
+          const val = parseFloat(valStr.replace(",", "."));
+          if (isNaN(val)) return false;
+          if (filterMangTaiOp === "gt") return val >= filterVal;
+          if (filterMangTaiOp === "lt") return val < filterVal;
+          return true;
+        });
+      }
+    }
+
+    return list;
+  }, [mangTaiSheet, selectedTbaUnit, filterMangTaiWeek, filterMangTaiOp, filterMangTaiValue]);
+
+  const historyWeeks = useMemo(() => {
+    if (mangTaiSheet.length < 2) return [];
+    const header = mangTaiSheet[0] || [];
+    const idxWeek = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("tuan bao cao") || nh === "tuan";
+    });
+    if (idxWeek === -1) return [];
+    const weeks = new Set<string>();
+    mangTaiSheet.slice(1).forEach(row => {
+      const w = String(row[idxWeek] || "").trim();
+      if (w) weeks.add(w);
+    });
+    return Array.from(weeks).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.replace(/\D/g, '')) || 0;
+      return numB - numA; // Newest weeks first
+    });
+  }, [mangTaiSheet]);
+
+  const biWeeks = useMemo(() => {
+    const weeks = [];
+    for (let i = 1; i <= 51; i += 2) {
+      weeks.push(`Tuần ${i}-${i + 1}`);
+    }
+    return weeks;
+  }, []);
 
   const exportToExcel = (header: string[], data: SheetData, fileName: string) => {
     if (data.length === 0) {
@@ -297,18 +494,19 @@ export default function App() {
     try {
       // Add timestamp to bypass browser cache
       const ts = Date.now();
-      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes] = await Promise.all([
+      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes, tbaRes, mangTaiRes] = await Promise.all([
         fetch(`/api/sheets/data?t=${ts}`),
         fetch(`/api/sheets/cap-nhat?t=${ts}`),
         fetch(`/api/sheets/thu-vien?t=${ts}`),
         fetch(`/api/sheets/tong-hop?t=${ts}`),
         fetch(`/api/sheets/luu?t=${ts}`),
-        fetch(`/api/sheets/lk-cda?t=${ts}`)
+        fetch(`/api/sheets/lk-cda?t=${ts}`),
+        fetch(`/api/sheets/tba?t=${ts}`),
+        fetch(`/api/sheets/mang-tai?t=${ts}`)
       ]);
 
-      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok) {
-        const dataErr = await dataRes.json();
-        throw new Error(dataErr.error || "Failed to fetch data from sheets");
+      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok || !tbaRes.ok || !mangTaiRes.ok) {
+        throw new Error("Failed to fetch data from sheets");
       }
 
       const data = await dataRes.json();
@@ -317,6 +515,8 @@ export default function App() {
       const tongHop = await tongHopRes.json();
       const luu = await luuRes.json();
       const lkCda = await lkCdaRes.json();
+      const tba = await tbaRes.json();
+      const mangTai = await mangTaiRes.json();
 
       console.log("Data fetched:", { 
         dataRows: data.length, 
@@ -324,7 +524,9 @@ export default function App() {
         thuVienRows: thuVien.length,
         tongHopRows: tongHop.length,
         luuRows: luu.length,
-        lkCdaRows: lkCda.length
+        lkCdaRows: lkCda.length,
+        tbaRows: tba.length,
+        mangTaiRows: mangTai.length
       });
 
       setDataSheet(data);
@@ -333,6 +535,8 @@ export default function App() {
       setTongHopSheet(tongHop);
       setLuuSheet(luu);
       setLkCdaSheet(lkCda);
+      setTbaSheet(tba);
+      setMangTaiSheet(mangTai);
       setLastSync(new Date());
       
       if (ts) {
@@ -511,7 +715,7 @@ export default function App() {
   }, [thuVienSheet]);
 
   const stationNames = useMemo(() => {
-    const findInSheet = (sheet: SheetData) => {
+  const findInSheet = (sheet: SheetData) => {
       if (sheet.length === 0) return null;
       
       let headerIndex = -1;
@@ -732,8 +936,8 @@ export default function App() {
     const idxTtdnLk2026 = getIdx(["ttdn lk 2026"]);
     const idxAtt2025 = getIdx(["att 2025"]);
     const idxTtdn2025 = getIdx(["ttdn 2025"]);
-    const idxUocAtt2026 = getIdx(["uoc att kwh", "uoc th att", "uoc att", "att uoc"]);
-    const idxUocTtdn2026 = getIdx(["uoc ttdn", "ttdn uoc"]);
+    const idxUocAtt2026 = getIdx(["uoc att kwh 2026", "uoc th att 2026", "uoc att 2026", "uoc att kwh", "uoc th att", "uoc att", "att uoc"]);
+    const idxUocTtdn2026 = getIdx(["uoc ttdn 2026", "uoc ttdn", "ttdn uoc"]);
 
     if (idxTram === -1) return [];
 
@@ -1719,6 +1923,15 @@ export default function App() {
             >
               Cấp ĐA
             </button>
+            <button 
+              onClick={() => setActiveTab("tba-xdm")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all whitespace-nowrap",
+                activeTab === "tba-xdm" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              TBA XDM
+            </button>
           </div>
         </div>
 
@@ -2608,7 +2821,7 @@ export default function App() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-auto relative max-h-[400px]">
-              <Table className="w-full border-separate border-spacing-0">
+              <table className="w-full border-separate border-spacing-0">
                 <TableHeader className="bg-[#f8fafc] sticky top-0 z-30 shadow-sm">
                   <TableRow className="hover:bg-transparent border-b-2 border-slate-200">
                     <TableHead className="h-10 font-bold text-slate-700 text-center px-4 border-r border-b bg-[#f8fafc] sticky top-0 z-30">STT</TableHead>
@@ -2635,7 +2848,7 @@ export default function App() {
                     </TableRow>
                   )}
                 </TableBody>
-              </Table>
+              </table>
             </CardContent>
           </Card>
         </motion.div>
@@ -2678,7 +2891,7 @@ export default function App() {
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-auto relative max-h-[600px]">
-              <Table className="w-full border-separate border-spacing-0">
+              <table className="w-full border-separate border-spacing-0">
                 <TableHeader className="bg-[#f1f5f9] sticky top-0 z-30 shadow-sm text-[12px]">
                   <TableRow className="hover:bg-transparent border-b-2 border-slate-300">
                     <TableHead className="h-11 font-bold text-slate-700 text-center px-4 border-r border-b bg-[#f1f5f9] sticky top-0 z-30">STT</TableHead>
@@ -2717,7 +2930,7 @@ export default function App() {
                     </TableRow>
                   )}
                 </TableBody>
-              </Table>
+              </table>
             </CardContent>
           </Card>
         </motion.div>
@@ -3928,6 +4141,482 @@ export default function App() {
             </CardContent>
           </Card>
         </motion.div>
+      </section>
+    ) : activeTab === "tba-xdm" ? (
+      <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full bg-slate-50">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Form Khai báo & Cập nhật */}
+          <Card className="md:col-span-1 shadow-md border-border bg-white">
+            <CardHeader>
+              <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-blue-600" />
+                Cập nhật mang tải
+              </CardTitle>
+              <CardDescription>Chọn trạm và nhập % mang tải báo cáo 2 tuần/lần</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form 
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!selectedTbaRow) {
+                    toast.error("Vui lòng chọn trạm biến áp");
+                    return;
+                  }
+                  if (!tbaMangTai) {
+                    toast.error("Vui lòng nhập tỷ lệ mang tải");
+                    return;
+                  }
+                  
+                  setSubmitting(true);
+                  try {
+                    // Find unit for selected trạm if available
+                    let unitVal = "";
+                    if (selectedTbaRow) {
+                      const header = tbaSheet[0] || [];
+                      const idxDL = header.findIndex(h => {
+                        const nh = normalizeString(String(h || ""));
+                        return nh.includes("dien luc") || nh.includes("don vi");
+                      });
+                      if (idxDL !== -1) {
+                        unitVal = selectedTbaRow[idxDL] || "";
+                      }
+                    }
+
+                    const res = await fetch("/api/sheets/mang-tai", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        b: selectedTbaRow[1] || "",
+                        c: selectedTbaRow[2] || "",
+                        d: selectedTbaRow[3] || "",
+                        e: selectedTbaRow[4] || "",
+                        f: tbaMangTai,
+                        g: tbaTuanBaoCao,
+                        h: tbaNam,
+                        i: tbaGhiChu
+                      })
+                    });
+                    
+                    if (!res.ok) throw new Error("Lỗi khi gửi dữ liệu");
+                    
+                    toast.success("Cập nhật mang tải thành công!");
+                    setTbaMangTai("");
+                    setTbaGhiChu("");
+                    fetchData();
+                  } catch (err: any) {
+                    toast.error(err.message);
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-bold text-[#1a73e8]">Điện lực</Label>
+                  <Select value={selectedTbaUnit} onValueChange={(val) => {
+                    setSelectedTbaUnit(val);
+                    setSelectedTbaRow(null); // Reset trạm khi đổi điện lực
+                  }}>
+                    <SelectTrigger className="h-10 bg-white">
+                      <SelectValue placeholder="Chọn điện lực" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-[300px]">
+                      <SelectItem value="all">Tất cả</SelectItem>
+                      {tbaDienLucList.map(unit => (
+                        <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-bold text-[#1a73e8]">Trạm biến áp</Label>
+                  <Popover open={openTbaSelect} onOpenChange={setOpenTbaSelect}>
+                    <PopoverTrigger 
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-between bg-white text-[13px] font-normal"
+                        >
+                          {selectedTbaRow ? `${selectedTbaRow[1]} - ${selectedTbaRow[2]}` : "Chọn trạm biến áp..."}
+                          <Search className="ml-2 h-4 w-4 opacity-50" />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent className="w-[300px] p-0 bg-white shadow-xl z-50 overflow-hidden" align="start">
+                      <Command>
+                        <CommandInput placeholder="Tìm mã trạm hoặc tên trạm..." className="h-9" />
+                        <CommandList className="max-h-[300px]">
+                          <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
+                          <CommandGroup>
+                            {filteredTbaList.map((item, idx) => (
+                              <CommandItem
+                                key={idx}
+                                value={`${item.row[1]} ${item.row[2]}`}
+                                onSelect={() => {
+                                  setSelectedTbaRow(item.row);
+                                  setOpenTbaSelect(false);
+                                }}
+                                className="text-[12px] cursor-pointer"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-bold">{item.row[2]}</span>
+                                  <span className="text-[10px] text-slate-500">{item.row[1]} - {item.row[3]}</span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-bold text-[#1a73e8]">Tỷ lệ mang tải (%)</Label>
+                    <Input 
+                      type="number" 
+                      step="0.01" 
+                      value={tbaMangTai} 
+                      onChange={(e) => setTbaMangTai(e.target.value)} 
+                      placeholder="Nhập %"
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-bold text-[#1a73e8]">Năm</Label>
+                    <Input 
+                      value={tbaNam} 
+                      onChange={(e) => setTbaNam(e.target.value)} 
+                      className="h-10"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-bold text-[#1a73e8]">Tuần báo cáo (2 tuần/lần)</Label>
+                  <Select value={tbaTuanBaoCao} onValueChange={setTbaTuanBaoCao}>
+                    <SelectTrigger className="h-10 bg-white">
+                      <SelectValue placeholder="Chọn tuần" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-[300px]">
+                      {biWeeks.map(w => (
+                        <SelectItem key={w} value={w}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-bold text-[#1a73e8]">Ghi chú</Label>
+                  <Textarea 
+                    value={tbaGhiChu} 
+                    onChange={(e) => setTbaGhiChu(e.target.value)} 
+                    placeholder="Nhập ghi chú nếu có..."
+                    className="min-h-[80px]"
+                  />
+                </div>
+
+                <Button 
+                  type="submit" 
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11" 
+                  disabled={submitting}
+                >
+                  {submitting ? <RefreshCw className="w-5 h-5 animate-spin" /> : "Gửi báo cáo"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* List of Reported Loads */}
+          <Card className="md:col-span-2 shadow-md border-border bg-white flex flex-col h-[700px]">
+            <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-4 px-6 bg-slate-50 border-b">
+              <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <TableIcon className="w-5 h-5 text-blue-600" />
+                Data cập nhật
+              </CardTitle>
+              
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-bold text-slate-500">Tuần báo cáo:</span>
+                  <Select value={filterMangTaiWeek} onValueChange={setFilterMangTaiWeek}>
+                    <SelectTrigger className="w-[120px] h-9 bg-white text-[12px]">
+                      <SelectValue placeholder="Tất cả" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-[300px]">
+                      <SelectItem value="all">Tất cả</SelectItem>
+                      {biWeeks.map(w => (
+                        <SelectItem key={w} value={w}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-bold text-slate-500">Lọc mang tải:</span>
+                  <div className="flex items-center gap-1 bg-white border rounded-md px-2 h-9">
+                    <Select value={filterMangTaiOp} onValueChange={setFilterMangTaiOp}>
+                      <SelectTrigger className="w-[80px] h-7 border-none bg-transparent text-[12px] shadow-none p-0 focus:ring-0">
+                        <SelectValue placeholder="Tất cả" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        <SelectItem value="all">Tất cả</SelectItem>
+                        <SelectItem value="gt">≥</SelectItem>
+                        <SelectItem value="lt">&lt;</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {filterMangTaiOp !== "all" && (
+                      <input
+                        type="number"
+                        className="w-12 h-7 text-[12px] border-none focus:ring-0 p-0 text-center font-bold text-blue-600"
+                        placeholder="%"
+                        value={filterMangTaiValue}
+                        onChange={(e) => setFilterMangTaiValue(e.target.value)}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-emerald-600 border-emerald-200 h-9"
+                  onClick={() => exportToExcel(mangTaiSheet[0] || [], filteredMangTaiHistory, "Lich_su_mang_tai_TBA_XDM")}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Xuất Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-auto relative max-h-[700px]">
+              <table className="w-full border-separate border-spacing-0 text-left">
+                <thead className="sticky top-0 z-20 shadow-md">
+                  <tr className="bg-slate-100">
+                    {mangTaiSheet[0]?.slice(1).map((h, i) => (
+                      <th key={i} className="font-bold text-[#3c4043] whitespace-nowrap py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMangTaiHistory.length === 0 ? (
+                    <tr>
+                      <td colSpan={mangTaiSheet[0]?.length || 9} className="h-40 text-center text-slate-400">Chưa có dữ liệu báo cáo</td>
+                    </tr>
+                  ) : (
+                    [...filteredMangTaiHistory].reverse().map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                        {row.slice(1).map((cell, i) => {
+                          const headerText = normalizeString(String(mangTaiSheet[0]?.[i + 1] || ""));
+                          const isMangTai = headerText.includes("mang tai");
+                          return (
+                            <td key={i} className={cn(
+                              "text-[12px] py-3 px-4 border-b border-r",
+                              isMangTai ? "font-bold text-blue-600 text-center" : ""
+                            )}>
+                              {cell}
+                              {isMangTai && cell ? "%" : ""}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* TBA List Card (Read-only reference) */}
+        <Card className="shadow-md border-border bg-white overflow-hidden">
+          <CardHeader className="bg-slate-50 border-b py-3 px-6 flex flex-row items-center justify-between">
+            <CardTitle className="text-[15px] font-bold text-slate-700 flex items-center gap-2">
+              <Database className="w-4 h-4 text-slate-500" />
+              Danh sách TBA XDM đã đóng điện
+            </CardTitle>
+            
+            <Dialog open={openAddTba} onOpenChange={setOpenAddTba}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="bg-[#1a73e8] hover:bg-[#1557b0] text-white h-8 text-[12px]">
+                  <Plus className="w-3 h-3 mr-1" />
+                  Khai báo TBA XDM
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-white sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Khai báo TBA Xây dựng mới</DialogTitle>
+                  <DialogDescription>
+                    Nhập thông tin trạm biến áp mới đã xây dựng và đóng điện.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Điện lực</Label>
+                    <Select value={newTbaDienLuc} onValueChange={setNewTbaDienLuc}>
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder="Chọn Điện lực" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {tbaDienLucList.map(unit => (
+                          <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tên Trạm biến áp</Label>
+                    <Input 
+                      placeholder="VD: TBA 22kV 1x1000kVA..." 
+                      className="bg-white"
+                      value={newTbaTen}
+                      onChange={(e) => setNewTbaTen(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sđm (kVA)</Label>
+                    <Input 
+                      type="number" 
+                      placeholder="VD: 1000" 
+                      className="bg-white"
+                      value={newTbaSdm}
+                      onChange={(e) => setNewTbaSdm(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ngày đóng điện</Label>
+                    <Input 
+                      type="text" 
+                      placeholder="DD/MM/YYYY" 
+                      className="bg-white"
+                      value={newTbaNgay}
+                      onChange={(e) => setNewTbaNgay(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setOpenAddTba(false)} disabled={submittingTba}>Hủy</Button>
+                  <Button className="bg-[#1a73e8] hover:bg-[#1557b0] text-white" onClick={handleAddTba} disabled={submittingTba}>
+                    {submittingTba ? "Đang lưu..." : "Lưu dữ liệu"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </CardHeader>
+            <CardContent className="p-0 overflow-auto relative max-h-[500px]">
+              <table className="w-full border-separate border-spacing-0 text-left">
+                <thead className="sticky top-0 z-10 shadow-sm">
+                  <tr className="bg-slate-100">
+                    <th className="w-12 text-center font-bold text-[#3c4043] py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">STT</th>
+                    {tbaSheet[0]?.map((h, i) => (
+                      <th key={i} className="font-bold text-[#3c4043] whitespace-nowrap py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">{h}</th>
+                    ))}
+                    <th className="w-20 text-center font-bold text-[#3c4043] py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTbaList.length === 0 ? (
+                    <tr>
+                      <td colSpan={(tbaSheet[0]?.length || 0) + 2} className="h-40 text-center text-slate-400">Không có dữ liệu trạm</td>
+                    </tr>
+                  ) : (
+                    [...filteredTbaList].reverse().map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="text-center text-slate-400 font-mono text-[11px] py-3 px-4 border-b border-r bg-white">{filteredTbaList.length - idx}</td>
+                        {item.row.map((cell, i) => (
+                          <td key={i} className="text-[12px] py-3 px-4 border-b border-r bg-white">{cell}</td>
+                        ))}
+                        <td className="text-center py-3 px-4 border-b border-r bg-white">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                            onClick={() => {
+                              setEditingTba(item);
+                              setEditTbaData({
+                                dienLuc: String(item.row[0] || ""),
+                                tenTram: String(item.row[1] || ""),
+                                sdm: String(item.row[2] || ""),
+                                ngayDongDien: String(item.row[3] || "")
+                              });
+                            }}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+            
+            {/* Edit TBA Dialog */}
+            <Dialog open={!!editingTba} onOpenChange={(open) => !open && setEditingTba(null)}>
+              <DialogContent className="bg-white sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Hiệu chỉnh thông tin TBA</DialogTitle>
+                  <DialogDescription>
+                    Thay đổi thông tin trạm biến áp và lưu lại.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Điện lực</Label>
+                    <Select 
+                      value={editTbaData.dienLuc} 
+                      onValueChange={(val) => setEditTbaData(prev => ({ ...prev, dienLuc: val }))}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder="Chọn Điện lực" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {tbaDienLucList.map(unit => (
+                          <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tên Trạm biến áp</Label>
+                    <Input 
+                      placeholder="Tên trạm..." 
+                      className="bg-white"
+                      value={editTbaData.tenTram}
+                      onChange={(e) => setEditTbaData(prev => ({ ...prev, tenTram: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sđm (kVA)</Label>
+                    <Input 
+                      type="number" 
+                      placeholder="Sđm..." 
+                      className="bg-white"
+                      value={editTbaData.sdm}
+                      onChange={(e) => setEditTbaData(prev => ({ ...prev, sdm: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ngày đóng điện</Label>
+                    <Input 
+                      type="text" 
+                      placeholder="DD/MM/YYYY" 
+                      className="bg-white"
+                      value={editTbaData.ngayDongDien}
+                      onChange={(e) => setEditTbaData(prev => ({ ...prev, ngayDongDien: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setEditingTba(null)} disabled={submittingTba}>Hủy</Button>
+                  <Button className="bg-[#1a73e8] hover:bg-[#1557b0] text-white" onClick={handleUpdateTba} disabled={submittingTba}>
+                    {submittingTba ? "Đang lưu..." : "Cập nhật"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+        </Card>
       </section>
     ) : null}
   </main>
