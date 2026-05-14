@@ -136,6 +136,7 @@ export default function App() {
   });
   const [selectedUnitCapDa, setSelectedUnitCapDa] = useState<string>("TOÀN CÔNG TY");
   const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da" | "tba-xdm">("cap-nhat");
+  const [selectedSummaryUnit, setSelectedSummaryUnit] = useState<{ unit: string, total: number, missing: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -347,6 +348,105 @@ export default function App() {
 
     return list;
   }, [mangTaiSheet, selectedTbaUnit, filterMangTaiWeek, filterMangTaiOp, filterMangTaiValue]);
+
+  const tbaSummary = useMemo(() => {
+    if (tbaSheet.length < 2 || mangTaiSheet.length < 2) return [];
+
+    const weekToFilter = (filterMangTaiWeek === "all" ? tbaTuanBaoCao : filterMangTaiWeek).trim();
+    
+    // Get all stations from tbaSheet organized by unit
+    const unitsData: Record<string, { total: number, updated: number, missing: string[], originalUnitName: string }> = {};
+    
+    const tbaHeader = tbaSheet[0] || [];
+    const idxDL_Tba = tbaHeader.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("dien luc") || nh.includes("don vi") || nh === "dl";
+    });
+    const idxTram_Tba = tbaHeader.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("ten tram") || nh.includes("ten tba") || nh.includes("tram bien ap");
+    });
+
+    if (idxDL_Tba === -1 || idxTram_Tba === -1) return [];
+
+    tbaSheet.slice(1).forEach(row => {
+      const unit = String(row[idxDL_Tba] || "").trim();
+      const station = String(row[idxTram_Tba] || "").trim();
+      if (!unit || !station) return;
+      
+      const normalizedUnit = normalizeString(unit);
+      if (!unitsData[normalizedUnit]) {
+        unitsData[normalizedUnit] = { total: 0, updated: 0, missing: [], originalUnitName: unit };
+      }
+      unitsData[normalizedUnit].total++;
+      unitsData[normalizedUnit].missing.push(station);
+    });
+
+    // Cross-reference with mangTaiSheet for the selected week
+    const mtHeader = mangTaiSheet[0] || [];
+    const idxDL_Mt = mtHeader.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("dien luc") || nh.includes("don vi") || nh === "dl";
+    });
+    const idxTram_Mt = mtHeader.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("ten tram") || nh.includes("ten tba") || nh.includes("tram bien ap");
+    });
+    const idxWeek_Mt = mtHeader.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("tuan bao cao") || nh === "tuan" || nh.includes("tuan bc");
+    });
+    const idxVal_Mt = mtHeader.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return (nh.includes("mang tai") && nh.includes("%")) || nh.includes("mang tai");
+    });
+
+    if (idxDL_Mt === -1 || idxTram_Mt === -1 || idxWeek_Mt === -1) return [];
+
+    mangTaiSheet.slice(1).forEach(row => {
+      const week = String(row[idxWeek_Mt] || "").trim();
+      if (week !== weekToFilter) return;
+
+      const unit = String(row[idxDL_Mt] || "").trim();
+      const normalizedUnit = normalizeString(unit);
+      const station = String(row[idxTram_Mt] || "").trim();
+      
+      let val = "";
+      if (idxVal_Mt !== -1) {
+        val = String(row[idxVal_Mt] || "").trim();
+      }
+      
+      // Count as updated if there's a record for this week and station
+      // We consider it "updated" even if value is empty if we just want to know if it exists,
+      // but according to requirement "chưa nhập giá trị mang tải %", we should check value.
+      // However, if the row exists, usually it's an attempt to update.
+      // Let's be safe and check if val is not empty.
+      if (!val) return;
+
+      const normalizedStation = normalizeString(station);
+      
+      if (unitsData[normalizedUnit]) {
+        // Use normalized comparison for missing stations
+        const stationIdx = unitsData[normalizedUnit].missing.findIndex(s => normalizeString(s) === normalizedStation);
+        if (stationIdx !== -1) {
+          unitsData[normalizedUnit].updated++;
+          unitsData[normalizedUnit].missing.splice(stationIdx, 1);
+        }
+      }
+    });
+
+    return Object.entries(unitsData)
+      .map(([normUnit, data]) => ({
+        unit: data.originalUnitName,
+        total: data.total,
+        updated: data.updated,
+        missing: data.missing,
+        status: data.updated === data.total ? "Đủ" : data.updated === 0 ? "Chưa nhập" : "Thiếu"
+      }))
+      .filter(item => item.status !== "Đủ")
+      .sort((a, b) => a.unit.localeCompare(b.unit, 'vi'));
+  }, [tbaSheet, mangTaiSheet, filterMangTaiWeek, tbaTuanBaoCao]);
+
 
   const historyWeeks = useMemo(() => {
     if (mangTaiSheet.length < 2) return [];
@@ -4429,6 +4529,104 @@ export default function App() {
           </Card>
         </div>
 
+        {/* Tổng hợp báo cáo Card */}
+        <Card className="shadow-md border-border bg-white overflow-hidden">
+          <CardHeader className="bg-slate-50 border-b py-3 px-6 flex flex-row items-center justify-between">
+            <CardTitle className="text-[15px] font-bold text-slate-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-orange-500" />
+              Tổng hợp báo cáo (Chưa nhập hoặc cập nhật chưa đầy đủ) - {filterMangTaiWeek === "all" ? tbaTuanBaoCao : filterMangTaiWeek}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50">
+                    <TableHead className="w-12 text-center font-bold">STT</TableHead>
+                    <TableHead className="font-bold">Điện lực</TableHead>
+                    <TableHead className="text-center font-bold">Tổng TBA XDM đã đóng điện</TableHead>
+                    <TableHead className="text-center font-bold">Số TBA chưa cập nhật mang tải</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tbaSummary.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-20 text-center text-slate-400">Tất cả đơn vị đã hoàn thành báo cáo tuần này</TableCell>
+                    </TableRow>
+                  ) : (
+                    tbaSummary.map((item, idx) => (
+                      <TableRow 
+                        key={idx} 
+                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                        onClick={() => setSelectedSummaryUnit({ 
+                          unit: item.unit, 
+                          total: item.total, 
+                          missing: item.missing 
+                        })}
+                      >
+                        <TableCell className="text-center font-mono text-slate-400">{idx + 1}</TableCell>
+                        <TableCell className="font-bold text-slate-700">{item.unit}</TableCell>
+                        <TableCell className="text-center font-bold text-slate-600">
+                          {item.total}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className={cn(
+                            "px-3 py-1 rounded-full text-[12px] font-bold",
+                            item.missing.length === item.total ? "bg-red-100 text-red-600" : "bg-orange-100 text-orange-600"
+                          )}>
+                            {item.missing.length}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Dialog hiển thị danh sách TBA chưa cập nhật */}
+        <Dialog open={!!selectedSummaryUnit} onOpenChange={(open) => !open && setSelectedSummaryUnit(null)}>
+          <DialogContent className="bg-white sm:max-w-[500px] max-h-[80vh] flex flex-col p-0 overflow-hidden">
+            <DialogHeader className="p-6 pb-2">
+              <DialogTitle className="flex items-center gap-2 text-slate-800">
+                <AlertCircle className="w-5 h-5 text-orange-500" />
+                Danh sách TBA chưa cập nhật mang tải
+              </DialogTitle>
+              <div className="text-sm text-slate-500 font-medium">
+                Đơn vị: <span className="text-blue-600">{selectedSummaryUnit?.unit}</span> | 
+                Thiếu: <span className="text-red-600 font-bold">{selectedSummaryUnit?.missing.length}</span> / {selectedSummaryUnit?.total}
+              </div>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto p-6 pt-2">
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow>
+                      <TableHead className="w-12 text-center font-bold">STT</TableHead>
+                      <TableHead className="font-bold">Tên trạm biến áp</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedSummaryUnit?.missing.map((station, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="text-center font-mono text-slate-400">{i + 1}</TableCell>
+                        <TableCell className="font-medium text-slate-700">{station}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 border-t flex justify-end">
+              <Button onClick={() => setSelectedSummaryUnit(null)} variant="outline" className="h-9">
+                Đóng
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* TBA List Card (Read-only reference) */}
         <Card className="shadow-md border-border bg-white overflow-hidden">
           <CardHeader className="bg-slate-50 border-b py-3 px-6 flex flex-row items-center justify-between">
@@ -4438,12 +4636,14 @@ export default function App() {
             </CardTitle>
             
             <Dialog open={openAddTba} onOpenChange={setOpenAddTba}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="bg-[#1a73e8] hover:bg-[#1557b0] text-white h-8 text-[12px]">
-                  <Plus className="w-3 h-3 mr-1" />
-                  Khai báo TBA XDM
-                </Button>
-              </DialogTrigger>
+              <DialogTrigger 
+                render={
+                  <Button size="sm" className="bg-[#1a73e8] hover:bg-[#1557b0] text-white h-8 text-[12px]">
+                    <Plus className="w-3 h-3 mr-1" />
+                    Khai báo TBA XDM
+                  </Button>
+                }
+              />
               <DialogContent className="bg-white sm:max-w-[425px]">
                 <DialogHeader>
                   <DialogTitle>Khai báo TBA Xây dựng mới</DialogTitle>
