@@ -2130,7 +2130,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label htmlFor="giai-phap" className="text-[12px] font-bold text-[#1a73e8]">Giải pháp đã thực hiện <span className="text-red-500">*</span></Label>
+                    <Label htmlFor="giai-phap" className="text-[12px] font-bold text-[#1a73e8]">Giải pháp đã/đang thực hiện <span className="text-red-500">*</span></Label>
                     <Textarea 
                       id="giai-phap" 
                       value={giaiPhap} 
@@ -2252,7 +2252,7 @@ export default function App() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-[12px] font-bold text-[#1a73e8]">Giải pháp đã thực hiện</Label>
+                <Label className="text-[12px] font-bold text-[#1a73e8]">Giải pháp đã/đang thực hiện</Label>
                 <Textarea 
                   value={editFormData.giaiPhap} 
                   onChange={(e) => setEditFormData({...editFormData, giaiPhap: e.target.value})} 
