@@ -4290,7 +4290,7 @@ export default function App() {
                         b: selectedTbaRow[1] || "",
                         c: selectedTbaRow[2] || "",
                         d: selectedTbaRow[3] || "",
-                        e: tbaMangTai,
+                        e: tbaMangTai.replace('.', ','),
                         f: tbaTuanBaoCao,
                         g: tbaNam,
                         h: tbaGhiChu
@@ -4377,11 +4377,15 @@ export default function App() {
                   <div className="space-y-2">
                     <Label className="text-[13px] font-bold text-[#1a73e8]">Tỷ lệ mang tải (%)</Label>
                     <Input 
-                      type="number" 
-                      step="0.01" 
+                      type="text" 
                       value={tbaMangTai} 
-                      onChange={(e) => setTbaMangTai(e.target.value)} 
-                      placeholder="Nhập %"
+                      onChange={(e) => {
+                        // Only allow numbers and one comma/dot
+                        const val = e.target.value.replace(/[^0-9,.]/g, '');
+                        // If it has both dot and comma, favor one or just allow it and handle later
+                        setTbaMangTai(val);
+                      }} 
+                      placeholder="Ví dụ: 40,5"
                       className="h-10"
                     />
                   </div>
