@@ -281,14 +281,14 @@ app.get("/api/sheets/mang-tai", async (req, res) => {
 app.post("/api/sheets/mang-tai", async (req, res) => {
   try {
     const sheets = getSheetsClient();
-    const { a, b, c, d, e, f, g, h } = req.body;
+    const { a, b, c, d, e, f, g, h, i } = req.body;
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: "'Mang tai'!A:H",
+      range: "'Mang tai'!A:I",
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values: [[a, b, c, d, e, f, g, h]],
+        values: [[a, b, c, d, e, f, g, h, i || ""]],
       },
     });
 

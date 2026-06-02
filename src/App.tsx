@@ -194,6 +194,15 @@ export default function App() {
   });
   const [tbaNam, setTbaNam] = useState(new Date().getFullYear().toString());
   const [tbaGhiChu, setTbaGhiChu] = useState("");
+  const [tbaThoiDiem, setTbaThoiDiem] = useState(() => format(new Date(), "yyyy-MM-dd HH:mm:ss"));
+  
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTbaThoiDiem(format(new Date(), "yyyy-MM-dd HH:mm:ss"));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [openTbaSelect, setOpenTbaSelect] = useState(false);
   const [openAddTba, setOpenAddTba] = useState(false);
   const [newTbaDienLuc, setNewTbaDienLuc] = useState("");
@@ -4293,7 +4302,8 @@ export default function App() {
                         e: tbaMangTai.replace('.', ','),
                         f: tbaTuanBaoCao,
                         g: tbaNam,
-                        h: tbaGhiChu
+                        h: tbaGhiChu,
+                        i: tbaThoiDiem
                       })
                     });
                     
@@ -4411,6 +4421,16 @@ export default function App() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-bold text-[#1a73e8]">Thời điểm cập nhật</Label>
+                  <Input 
+                    type="text" 
+                    value={tbaThoiDiem} 
+                    disabled 
+                    className="h-10 bg-slate-50 text-slate-500 font-mono cursor-not-allowed"
+                  />
                 </div>
 
                 <div className="space-y-2">
