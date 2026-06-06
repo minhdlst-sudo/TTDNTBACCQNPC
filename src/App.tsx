@@ -135,7 +135,7 @@ export default function App() {
     return `Tháng ${prevMonth}`;
   });
   const [selectedUnitCapDa, setSelectedUnitCapDa] = useState<string>("TOÀN CÔNG TY");
-  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da" | "tba-xdm">("cap-nhat");
+  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da" | "tba-xdm" | "bao-cao">("cap-nhat");
   const [selectedSummaryUnit, setSelectedSummaryUnit] = useState<{ unit: string, total: number, missing: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -217,6 +217,19 @@ export default function App() {
     sdm: "",
     ngayDongDien: ""
   });
+
+  // Report Tab state
+  const [reportDateRange, setReportDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({
+    from: undefined,
+    to: undefined,
+  });
+  const [reportDienLuc, setReportDienLuc] = useState<string>("all");
+  const [openReportDienLuc, setOpenReportDienLuc] = useState(false);
+  const [reportBiWeek, setReportBiWeek] = useState<string>("all");
+  const [openReportBiWeek, setOpenReportBiWeek] = useState(false);
 
   const handleUpdateTba = async () => {
     if (!editingTba) return;
@@ -1682,6 +1695,140 @@ export default function App() {
     return result;
   }, [capNhatSheet, filterTenTram, dienLuc, dateRange]);
 
+  const reportData = useMemo(() => {
+    if (capNhatSheet.length < 2) return [];
+    const header = capNhatSheet[0].map(h => normalizeString(String(h || "")));
+    const indexDienLuc = header.indexOf(normalizeString("điện lực"));
+    const indexNgayThucHien = header.indexOf(normalizeString("ngày thực hiện"));
+    
+    let result = capNhatSheet.slice(1).map((row, idx) => ({
+      data: row,
+      originalIndex: idx + 1
+    }));
+
+    result = result.filter(item => {
+      const row = item.data;
+      if (!row || row.length === 0) return false;
+      const nonEmptyCount = row.filter(cell => cell && String(cell).trim() !== "").length;
+      return nonEmptyCount > 1;
+    });
+    
+    if (reportDienLuc !== "all" && indexDienLuc !== -1) {
+      const normDL = normalizeString(reportDienLuc);
+      result = result.filter(item => item.data[indexDienLuc] && normalizeString(String(item.data[indexDienLuc])) === normDL);
+    }
+
+    // Date range filtering
+    if (indexNgayThucHien !== -1 && (reportDateRange.from || reportDateRange.to)) {
+      result = result.filter(item => {
+        const dateStr = item.data[indexNgayThucHien];
+        if (!dateStr) return false;
+        const rowDate = new Date(dateStr);
+        if (isNaN(rowDate.getTime())) return true;
+        
+        let fromDate = reportDateRange.from ? new Date(reportDateRange.from) : undefined;
+        let toDate = reportDateRange.to ? new Date(reportDateRange.to) : undefined;
+
+        if (fromDate && rowDate < new Date(fromDate.setHours(0, 0, 0, 0))) return false;
+        if (toDate && rowDate > new Date(toDate.setHours(23, 59, 59, 999))) return false;
+        
+        return true;
+      });
+    }
+
+    // Bi-week filtering
+    if (indexNgayThucHien !== -1 && reportBiWeek !== "all") {
+      result = result.filter(item => {
+        const dateStr = item.data[indexNgayThucHien];
+        if (!dateStr) return false;
+        const rowDate = new Date(dateStr);
+        if (isNaN(rowDate.getTime())) return false;
+        
+        const w = getWeek(rowDate);
+        let biWeekIdx = Math.ceil(w / 2);
+        if (biWeekIdx > 26) biWeekIdx = 26;
+        const start = (biWeekIdx * 2) - 1;
+        const end = biWeekIdx * 2;
+        const rowBiWeek = `Tuần ${start}-${end}`;
+        
+        return rowBiWeek === reportBiWeek;
+      });
+    }
+    
+    // Sort by date descending (newest first)
+    if (indexNgayThucHien !== -1) {
+      result.sort((a, b) => {
+        const dateA = a.data[indexNgayThucHien] ? new Date(a.data[indexNgayThucHien]).getTime() : 0;
+        const dateB = b.data[indexNgayThucHien] ? new Date(b.data[indexNgayThucHien]).getTime() : 0;
+         return dateB - dateA;
+      });
+    }
+    
+    return result;
+  }, [capNhatSheet, reportDienLuc, reportDateRange, reportBiWeek]);
+
+  const missingReportDienLucs = useMemo(() => {
+    if (capNhatSheet.length < 2) return [];
+    
+    const header = capNhatSheet[0].map(h => normalizeString(String(h || "")));
+    const indexDienLuc = header.indexOf(normalizeString("điện lực"));
+    const indexNgayThucHien = header.indexOf(normalizeString("ngày thực hiện"));
+    
+    if (indexDienLuc === -1) return [];
+
+    let validRows = capNhatSheet.slice(1).filter(row => {
+      if (!row || row.length === 0) return false;
+      const nonEmptyCount = row.filter(cell => cell && String(cell).trim() !== "").length;
+      return nonEmptyCount > 1;
+    });
+
+    if (indexNgayThucHien !== -1 && (reportDateRange.from || reportDateRange.to)) {
+      validRows = validRows.filter(row => {
+        const dateStr = row[indexNgayThucHien];
+        if (!dateStr) return false;
+        const rowDate = new Date(dateStr);
+        if (isNaN(rowDate.getTime())) return true;
+        
+        let fromDate = reportDateRange.from ? new Date(reportDateRange.from) : undefined;
+        let toDate = reportDateRange.to ? new Date(reportDateRange.to) : undefined;
+
+        if (fromDate && rowDate < new Date(fromDate.setHours(0, 0, 0, 0))) return false;
+        if (toDate && rowDate > new Date(toDate.setHours(23, 59, 59, 999))) return false;
+        
+        return true;
+      });
+    }
+
+    if (indexNgayThucHien !== -1 && reportBiWeek !== "all") {
+      validRows = validRows.filter(row => {
+        const dateStr = row[indexNgayThucHien];
+        if (!dateStr) return false;
+        const rowDate = new Date(dateStr);
+        if (isNaN(rowDate.getTime())) return false;
+        
+        const w = getWeek(rowDate);
+        let biWeekIdx = Math.ceil(w / 2);
+        if (biWeekIdx > 26) biWeekIdx = 26;
+        const start = (biWeekIdx * 2) - 1;
+        const end = biWeekIdx * 2;
+        const rowBiWeek = `Tuần ${start}-${end}`;
+        
+        return rowBiWeek === reportBiWeek;
+      });
+    }
+
+    const activeDienLucs = new Set(
+      validRows
+        .map(row => normalizeString(String(row[indexDienLuc] || "")))
+        .filter(Boolean)
+    );
+
+    return dienLucOptions.filter(name => {
+      const normName = normalizeString(name);
+      return !activeDienLucs.has(normName);
+    });
+  }, [capNhatSheet, dienLucOptions, reportDateRange, reportBiWeek]);
+
   const filteredDataSheet = useMemo(() => {
     if (dataSheet.length < 2) return [];
     const header = dataSheet[0].map(h => normalizeString(String(h || "")));
@@ -1995,6 +2142,15 @@ export default function App() {
               )}
             >
               Cập nhật
+            </button>
+            <button 
+              onClick={() => setActiveTab("bao-cao")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all whitespace-nowrap",
+                activeTab === "bao-cao" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Báo cáo
             </button>
             <button 
               onClick={() => setActiveTab("tong-hop")}
@@ -4841,6 +4997,327 @@ export default function App() {
               </DialogContent>
             </Dialog>
         </Card>
+      </section>
+    ) : activeTab === "bao-cao" ? (
+      <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full bg-slate-50">
+        {/* Title area */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">Tổng hợp báo cáo</h2>
+            <p className="text-xs text-slate-500 mt-1">Lọc dữ liệu mới cập nhật theo Điện lực, Ngày thực hiện và Tuần báo cáo</p>
+          </div>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 text-[12px] bg-white border-border text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 self-start sm:self-auto shadow-sm"
+            onClick={() => exportToExcel(capNhatSheet[0] || [], reportData.map(i => i.data), "Tong_hop_bao_cao")}
+            disabled={reportData.length === 0}
+          >
+            <Download className="w-4 h-4 mr-1.5" />
+            Xuất Excel
+          </Button>
+        </div>
+
+        {/* Filters Card */}
+        <Card className="shadow-sm border border-slate-200 bg-white">
+          <CardContent className="p-4 flex flex-col lg:flex-row lg:items-center gap-4">
+            {/* Power Company filter */}
+            <div className="flex flex-col gap-1.5 w-full sm:w-[240px]">
+              <Label className="text-[12px] font-bold text-[#1a73e8]">Điện lực</Label>
+              <Popover open={openReportDienLuc} onOpenChange={setOpenReportDienLuc} modal="trap-focus">
+                <PopoverTrigger 
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openReportDienLuc}
+                      className="w-full h-10 justify-between bg-white border-border text-[13px] font-normal"
+                    >
+                      {reportDienLuc === "all" ? "Tất cả điện lực" : reportDienLuc}
+                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  }
+                />
+                <PopoverContent 
+                  className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border z-50 animate-in fade-in-50 duration-200" 
+                  align="start"
+                  sideOffset={4}
+                >
+                  <Command>
+                    <CommandInput placeholder="Tìm điện lực..." className="h-9 text-[13px]" autoFocus={false} />
+                    <CommandList className="max-h-[300px]">
+                      <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="all"
+                          onSelect={() => {
+                            setReportDienLuc("all");
+                            setOpenReportDienLuc(false);
+                          }}
+                          className="text-[13px] cursor-pointer"
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", reportDienLuc === "all" ? "opacity-100" : "opacity-0")} />
+                          Tất cả điện lực
+                        </CommandItem>
+                        {dienLucOptions.map((name) => (
+                           <CommandItem
+                             key={name}
+                             value={name}
+                             onSelect={() => {
+                               setReportDienLuc(name);
+                               setOpenReportDienLuc(false);
+                             }}
+                             className="text-[13px] cursor-pointer"
+                           >
+                             <Check className={cn("mr-2 h-4 w-4", reportDienLuc === name ? "opacity-100" : "opacity-0")} />
+                             {name}
+                           </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Date range filter */}
+            <div className="flex flex-col gap-1.5 w-full sm:w-[280px]">
+              <Label className="text-[12px] font-bold text-[#1a73e8]">Ngày thực hiện</Label>
+              <Popover>
+                <PopoverTrigger 
+                  render={
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "h-10 text-[13px] bg-white border-border justify-start font-normal w-full",
+                        !reportDateRange.from && "text-slate-500"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {reportDateRange.from ? (
+                        reportDateRange.to ? (
+                          <>
+                            {format(reportDateRange.from, "dd/MM/yyyy")} - {format(reportDateRange.to, "dd/MM/yyyy")}
+                          </>
+                        ) : (
+                          format(reportDateRange.from, "dd/MM/yyyy")
+                        )
+                      ) : (
+                        <span>Lọc theo Ngày thực hiện...</span>
+                      )}
+                    </Button>
+                  }
+                />
+                <PopoverContent className="w-auto p-0 bg-white shadow-xl border-border z-50" align="start">
+                  <Calendar
+                    mode="range"
+                    defaultMonth={reportDateRange.from}
+                    selected={reportDateRange}
+                    onSelect={(range: any) => setReportDateRange(range || { from: undefined, to: undefined })}
+                    numberOfMonths={1}
+                    locale={vi}
+                  />
+                  {(reportDateRange.from || reportDateRange.to) && (
+                    <div className="p-2 border-t border-border flex justify-end">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 text-[11px] hover:bg-slate-100"
+                        onClick={() => setReportDateRange({ from: undefined, to: undefined })}
+                      >
+                        Xóa lọc
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Bi-week range filter */}
+            <div className="flex flex-col gap-1.5 w-full sm:w-[220px]">
+              <Label className="text-[12px] font-bold text-[#1a73e8]">Lọc theo 2 tuần</Label>
+              <Popover open={openReportBiWeek} onOpenChange={setOpenReportBiWeek} modal="trap-focus">
+                <PopoverTrigger 
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openReportBiWeek}
+                      className="w-full h-10 justify-between bg-white border-border text-[13px] font-normal"
+                    >
+                      {reportBiWeek === "all" ? "Tất cả các tuần" : reportBiWeek}
+                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  }
+                />
+                <PopoverContent 
+                  className="w-[var(--radix-popover-trigger-width)] p-0 bg-white shadow-xl border-border z-50 animate-in fade-in-50 duration-200" 
+                  align="start"
+                  sideOffset={4}
+                >
+                  <Command>
+                    <CommandInput placeholder="Tìm tuần..." className="h-9 text-[13px]" autoFocus={false} />
+                    <CommandList className="max-h-[300px]">
+                      <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="all"
+                          onSelect={() => {
+                            setReportBiWeek("all");
+                            setOpenReportBiWeek(false);
+                          }}
+                          className="text-[13px] cursor-pointer"
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", reportBiWeek === "all" ? "opacity-100" : "opacity-0")} />
+                          Tất cả các tuần
+                        </CommandItem>
+                        {biWeeks.map((weekRange) => (
+                           <CommandItem
+                             key={weekRange}
+                             value={weekRange}
+                             onSelect={() => {
+                               setReportBiWeek(weekRange);
+                               setOpenReportBiWeek(false);
+                             }}
+                             className="text-[13px] cursor-pointer"
+                           >
+                             <Check className={cn("mr-2 h-4 w-4", reportBiWeek === weekRange ? "opacity-100" : "opacity-0")} />
+                             {weekRange}
+                           </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Summary tags */}
+            <div className="lg:ml-auto self-start lg:self-end flex items-center gap-3">
+              <div className="text-[12px] font-medium text-slate-700 bg-slate-50 border px-3 py-1.5 rounded-md shadow-sm">
+                Kết quả: <strong className="text-[#1a73e8]">{reportData.length}</strong> dòng
+              </div>
+              
+              {missingReportDienLucs.length > 0 && (
+                <div className="text-[12px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-md shadow-sm flex items-center gap-1.5">
+                  Chưa báo cáo: <strong className="text-amber-700">{missingReportDienLucs.length}</strong> đơn vị
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Two column grid layout when there are missing power companies, or standard single layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+          {/* Report Data Table */}
+          <div className="col-span-1 lg:col-span-3 min-w-0 flex flex-col gap-4">
+            <Card className="shadow-md border border-slate-200 bg-white overflow-hidden flex flex-col h-[650px]">
+              <CardHeader className="py-3 px-4 bg-slate-50 border-b border-border flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="text-[14px] font-bold text-slate-700">Bảng tổng hợp báo cáo</CardTitle>
+                <span className="text-[11px] text-slate-500 font-medium">Lấy từ "Dữ liệu mới cập nhật"</span>
+              </CardHeader>
+              <CardContent className="p-0 flex-1 overflow-auto relative">
+                <table className="w-full caption-bottom text-[12px] border-separate border-spacing-0">
+                  <TableHeader className="bg-[#f1f3f4] sticky top-0 z-20 shadow-sm">
+                    <TableRow className="hover:bg-transparent border-b border-slate-200">
+                      <TableHead className="h-10 font-bold text-[#3c4043] px-4 whitespace-nowrap bg-[#f1f3f4] border-b-2 border-slate-200 sticky top-0 z-20 w-12 text-center">STT</TableHead>
+                      {capNhatSheet[0]?.map((header, i) => (
+                        <TableHead key={i} className="h-10 font-bold text-[#3c4043] px-4 whitespace-nowrap bg-[#f1f3f4] border-b-2 border-slate-200 sticky top-0 z-20">{header}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportData.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={(capNhatSheet[0]?.length || 4) + 1} className="h-64 text-center text-slate-400 text-[13px] bg-white">
+                          Không có báo cáo nào khớp với khoảng thời gian và đơn vị lọc.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      reportData.map((item, i) => (
+                        <TableRow key={i} className="hover:bg-blue-50/20 border-b border-slate-100 transition-colors text-[11px] sm:text-[12px]">
+                          <TableCell className="py-3 px-4 border-b border-r border-slate-100 text-center font-mono text-slate-400 bg-white">
+                            {i + 1}
+                          </TableCell>
+                          {item.data.map((cell, j) => {
+                            const headerName = capNhatSheet[0]?.[j]?.toLowerCase() || "";
+                            const isLongText = headerName.includes("giải pháp") || 
+                                             headerName.includes("vướng mắc") || 
+                                             headerName.includes("đề xuất") ||
+                                             headerName.includes("nguyên nhân") ||
+                                             headerName.includes("kế hoạch") ||
+                                             headerName.includes("công việc");
+                            
+                            const isMediumText = headerName.includes("tên trạm") || 
+                                               headerName.includes("đơn vị") ||
+                                               headerName.includes("điện lực") ||
+                                               headerName.includes("tiến độ");
+
+                            return (
+                              <TableCell key={j} className={cn(
+                                "py-3 px-4 border-b border-r border-slate-100 bg-white",
+                                isLongText ? "min-w-[300px] max-w-[500px] whitespace-normal break-words leading-relaxed" : 
+                                isMediumText ? "min-w-[150px] whitespace-normal font-medium text-slate-700" : "whitespace-nowrap"
+                              )}>
+                                {j === 3 ? (
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded text-[10px] font-bold shadow-sm inline-block",
+                                    cell === "QLVH" ? "bg-blue-100 text-blue-700 border border-blue-200" : 
+                                    cell === "KD" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : 
+                                    "bg-slate-100 text-slate-700 border border-slate-200"
+                                  )}>
+                                    {cell}
+                                  </span>
+                                ) : cell}
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </table>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Unreported list sidebar */}
+          <div className="col-span-1 lg:col-span-1 flex flex-col gap-4">
+            <Card className="shadow-md border border-amber-200 bg-amber-50/30 overflow-hidden flex flex-col">
+              <CardHeader className="py-3 px-4 bg-amber-100/50 border-b border-amber-100 flex flex-row items-center gap-2 space-y-0">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                <CardTitle className="text-[13px] md:text-[14px] font-bold text-amber-900">Chưa có báo cáo</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 bg-white">
+                <p className="text-[12px] text-slate-600 mb-3 leading-relaxed">
+                  Danh sách các Điện lực <strong>không có dữ liệu báo cáo</strong> trong khoảng thời gian lọc:
+                </p>
+                
+                {missingReportDienLucs.length === 0 ? (
+                  <div className="py-6 px-4 bg-emerald-50 border border-emerald-100 text-emerald-700 text-center rounded-lg">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                    <p className="text-[12px] font-bold">Tất cả các Điện lực đã báo cáo!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                    {missingReportDienLucs.map((name, idx) => (
+                      <div 
+                        key={idx}
+                        className="flex items-center gap-2 py-2 px-3 rounded-md bg-amber-50 hover:bg-amber-100/70 border border-amber-100 text-[12.5px] text-amber-900 transition-all font-medium"
+                      >
+                        <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                        <span>{name}</span>
+                       </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </section>
     ) : null}
   </main>
