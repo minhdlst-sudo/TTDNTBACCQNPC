@@ -699,6 +699,18 @@ export default function App() {
     e.preventDefault();
     if (!editingRow) return;
 
+    if (!editFormData.giaiPhap.trim()) {
+      toast.warning("Vui lòng nhập giải pháp đã/đang thực hiện");
+      return;
+    }
+
+    const trimmedGiaiPhap = editFormData.giaiPhap.trim();
+    const firstWord = trimmedGiaiPhap.split(/\s+/)[0]?.toLowerCase().replace(/[.,;:!?]/g, "");
+    if (firstWord !== "đã" && firstWord !== "đang") {
+      toast.warning("Giải pháp đã/đang thực hiện bắt buộc phải bắt đầu bằng từ 'đã' hoặc 'đang'!");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/sheets/cap-nhat", {
@@ -741,11 +753,16 @@ export default function App() {
       !tenTram || 
       !ngayThucHien || 
       !phanLoai || 
-      !giaiPhap.trim() || 
-      !vuongMac.trim() || 
-      !deXuat.trim()
+      !giaiPhap.trim()
     ) {
-      toast.warning("Vui lòng điền đầy đủ tất cả các trường thông tin");
+      toast.warning("Vui lòng điền đầy đủ các thông tin bắt buộc (Điện lực, Tên trạm, Ngày thực hiện, Phân loại, Giải pháp)");
+      return;
+    }
+
+    const trimmedGiaiPhap = giaiPhap.trim();
+    const firstWord = trimmedGiaiPhap.split(/\s+/)[0]?.toLowerCase().replace(/[.,;:!?]/g, "");
+    if (firstWord !== "đã" && firstWord !== "đang") {
+      toast.warning("Giải pháp đã/đang thực hiện bắt buộc phải bắt đầu bằng từ 'đã' hoặc 'đang'!");
       return;
     }
 
@@ -2401,12 +2418,13 @@ export default function App() {
                       value={giaiPhap} 
                       onChange={(e) => setGiaiPhap(e.target.value)} 
                       className="min-h-[80px] text-[13px] bg-white border-border resize-none" 
-                      placeholder="Nhập giải pháp chi tiết..."
+                      placeholder="Chú ý: chỉ nhập các công việc đã/đang thực hiện"
                     />
+                    <p className="text-[11.5px] text-red-500 font-semibold mt-1">Chú ý: chỉ nhập các công việc đã/đang thực hiện</p>
                   </div>
 
                   <div className="space-y-1">
-                    <Label htmlFor="vuong-mac" className="text-[12px] font-bold text-[#1a73e8]">Vướng mắc khó khăn <span className="text-red-500">*</span></Label>
+                    <Label htmlFor="vuong-mac" className="text-[12px] font-bold text-[#1a73e8]">Vướng mắc khó khăn</Label>
                     <Textarea 
                       id="vuong-mac" 
                       value={vuongMac} 
@@ -2417,7 +2435,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label htmlFor="de-xuat" className="text-[12px] font-bold text-[#1a73e8]">Đề xuất <span className="text-red-500">*</span></Label>
+                    <Label htmlFor="de-xuat" className="text-[12px] font-bold text-[#1a73e8]">Đề xuất</Label>
                     <Textarea 
                       id="de-xuat" 
                       value={deXuat} 
@@ -2522,7 +2540,9 @@ export default function App() {
                   value={editFormData.giaiPhap} 
                   onChange={(e) => setEditFormData({...editFormData, giaiPhap: e.target.value})} 
                   className="min-h-[100px] text-[13px] bg-white border-border"
+                  placeholder="Chú ý: chỉ nhập các công việc đã/đang thực hiện"
                 />
+                <p className="text-[11.5px] text-red-500 font-semibold text-left mt-1">Chú ý: chỉ nhập các công việc đã/đang thực hiện</p>
               </div>
 
               <div className="space-y-2">
