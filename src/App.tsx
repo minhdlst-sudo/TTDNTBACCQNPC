@@ -2250,7 +2250,12 @@ export default function App() {
           >
             <Card className="h-full shadow-sm border-border rounded-lg overflow-hidden flex flex-col">
               <CardHeader className="pb-4">
-                <CardTitle className="text-[15px] font-semibold">Cập nhật thông tin</CardTitle>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <CardTitle className="text-[15px] font-semibold">Cập nhật thông tin</CardTitle>
+                  <span className="text-[11px] font-semibold bg-red-50 text-red-600 border border-red-100 rounded px-1.5 py-0.5 whitespace-nowrap animate-pulse">
+                    Tuần hiện tại: Tuần {getWeek(new Date())}
+                  </span>
+                </div>
                 <CardDescription className="text-[12px]">Nhập thông tin cập nhật cho trạm</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 overflow-y-auto">
@@ -5023,7 +5028,12 @@ export default function App() {
         {/* Title area */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-slate-800">Tổng hợp báo cáo</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-bold text-slate-800">Tổng hợp báo cáo</h2>
+              <span className="text-xs font-semibold bg-red-50 text-red-600 border border-red-100 rounded px-2 py-0.5 whitespace-nowrap animate-pulse">
+                Tuần hiện tại: Tuần {getWeek(new Date())}
+              </span>
+            </div>
             <p className="text-xs text-slate-500 mt-1">Lọc dữ liệu mới cập nhật theo Điện lực, Ngày thực hiện và Tuần báo cáo</p>
           </div>
           
