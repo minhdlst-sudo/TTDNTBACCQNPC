@@ -97,6 +97,23 @@ const normalizeString = (s: string) => {
     .trim();
 };
 
+const getNormalizedCategory = (plStr: string): string => {
+  const norm = normalizeString(plStr);
+  if (norm.includes("sctx") || norm.includes("sua chua thuong xuyen") || norm.includes("thuong xuyen")) {
+    return "SCTX";
+  }
+  if (norm.includes("scl") || norm.includes("sua chua lon") || norm.includes("sc lon")) {
+    return "SCL";
+  }
+  if (norm.includes("vuong") || norm.includes("vung") || norm.includes("dtxd vuong")) {
+    return "Vướng ĐTXD";
+  }
+  if (norm.includes("dtxd") || norm.includes("xdcb") || norm.includes("xaydung") || norm.includes("dau tu xay dung") || norm.includes("dau tu")) {
+    return "ĐTXD";
+  }
+  return "";
+};
+
 type SheetData = string[][];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -1473,10 +1490,16 @@ export default function App() {
     const idxDataSCL = findCol(dataHeader, ["ke hoach scl", "kh scl", "scl"]);
     const idxDataDTXD = findCol(dataHeader, ["ke hoach dtxd", "kh dtxd", "dtxd", "dau tu xay dung", "xdcb"]);
 
-    const idxCnTram = findCol(cnHeader, ["ten tram", "tba", "tram"]);
-    const idxCnDL = findCol(cnHeader, ["dien luc", "don vi"]);
-    const idxCnPhanLoai = findCol(cnHeader, ["phan loai"]);
-    const idxCnCongViec = findCol(cnHeader, ["cong viec da thuc hien", "giai phap da thuc hien", "giai phap", "noi dung"]);
+    // Robust column detection with fallbacks
+    const getIndex = (header: string[], keywords: string[], fallback: number) => {
+      const idx = header.findIndex(h => keywords.some(k => h.includes(normalizeString(k))));
+      return idx !== -1 ? idx : fallback;
+    };
+
+    const idxCnTram = getIndex(cnHeader, ["ten tram", "tba", "tram"], 1);
+    const idxCnDL = getIndex(cnHeader, ["dien luc", "don vi"], 0);
+    const idxCnPhanLoai = getIndex(cnHeader, ["phan loai"], 4);
+    const idxCnCongViec = getIndex(cnHeader, ["cong viec da thuc hien", "giai phap da thuc hien", "giai phap", "noi dung"], 5);
 
     const units = new Set<string>();
     dataSheet.slice(1).forEach(row => {
@@ -1530,26 +1553,24 @@ export default function App() {
     capNhatSheet.slice(1).forEach(row => {
       const station = String(row[idxCnTram] || "").trim();
       const unit = String(row[idxCnDL] || "").trim();
-      if (!station || idxCnTram === -1) return;
+      if (!station) return;
 
-      const pl = normalizeString(String(row[idxCnPhanLoai] || ""));
-      const hasWork = idxCnCongViec !== -1 && row[idxCnCongViec] && String(row[idxCnCongViec]).trim() !== "";
+      const plRaw = String(row[idxCnPhanLoai] || "");
+      const mat = getNormalizedCategory(plRaw);
       
-      if (hasWork) {
-        if (pl.includes("sctx")) {
+      if (mat) {
+        if (mat === "SCTX") {
           totalSets.SCTX.actual.add(station);
           if (unitStats[unit]) unitStats[unit].SCTX.actual.add(station);
-        } else if (pl.includes("scl")) {
+        } else if (mat === "SCL") {
           totalSets.SCL.actual.add(station);
           if (unitStats[unit]) unitStats[unit].SCL.actual.add(station);
-        } else if (pl.includes("dtxd") || pl.includes("xdcb") || pl.includes("xaydung")) {
-          if (pl.includes("vuong dtxd")) {
-            totalSets.VUONG_DTXD.actual.add(station);
-            if (unitStats[unit]) unitStats[unit].VUONG_DTXD.actual.add(station);
-          } else {
-            totalSets.DTXD.actual.add(station);
-            if (unitStats[unit]) unitStats[unit].DTXD.actual.add(station);
-          }
+        } else if (mat === "ĐTXD") {
+          totalSets.DTXD.actual.add(station);
+          if (unitStats[unit]) unitStats[unit].DTXD.actual.add(station);
+        } else if (mat === "Vướng ĐTXD") {
+          totalSets.VUONG_DTXD.actual.add(station);
+          if (unitStats[unit]) unitStats[unit].VUONG_DTXD.actual.add(station);
         }
       }
     });
@@ -1589,31 +1610,37 @@ export default function App() {
 
     if (capNhatSheet.length > 1) {
       const cnHeader = capNhatSheet[0].map(h => normalizeString(String(h || "")));
-      const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm"));
-      const cnIdxPhanLoai = cnHeader.indexOf(normalizeString("phân loại"));
+      const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm")) !== -1 ? cnHeader.indexOf(normalizeString("tên trạm")) : 1;
+      const cnIdxPhanLoai = cnHeader.indexOf(normalizeString("phân loại")) !== -1 ? cnHeader.indexOf(normalizeString("phân loại")) : 4;
       const cnIdxNoiDung = cnHeader.findIndex(h => {
         const norm = h.toLowerCase();
         if (norm.includes("cong viec da thuc hien") || norm.includes("noi dung thuc hien")) return true;
         if (norm.includes("thuc hien") && !norm.includes("ngay")) return true;
         return false;
-      });
+      }) !== -1 ? cnHeader.findIndex(h => {
+        const norm = h.toLowerCase();
+        if (norm.includes("cong viec da thuc hien") || norm.includes("noi dung thuc hien")) return true;
+        if (norm.includes("thuc hien") && !norm.includes("ngay")) return true;
+        return false;
+      }) : 5;
       
-      if (cnIdxTram !== -1) {
-        capNhatSheet.slice(1).forEach(r => {
-          const station = String(r[cnIdxTram] || "").trim();
-          if (station) {
-            const pl = normalizeString(String(r[cnIdxPhanLoai] || ""));
-            const content = cnIdxNoiDung !== -1 ? String(r[cnIdxNoiDung] || "").trim() : "";
-            
-            if (!stationImplementations[station]) stationImplementations[station] = {};
-            
-            if (pl.includes("sctx")) stationImplementations[station]["SCTX"] = content;
-            if (pl.includes("scl")) stationImplementations[station]["SCL"] = content;
-            if (pl.includes("vuong dtxd")) stationImplementations[station]["Vướng ĐTXD"] = content;
-            else if (pl.includes("dtxd") || pl.includes("xdcb") || pl.includes("xaydung")) stationImplementations[station]["ĐTXD"] = content;
+      capNhatSheet.slice(1).forEach(r => {
+        const station = String(r[cnIdxTram] || "").trim();
+        if (station) {
+          const plRaw = String(r[cnIdxPhanLoai] || "");
+          const mat = getNormalizedCategory(plRaw);
+          const content = String(r[cnIdxNoiDung] || "").trim();
+          
+          if (!stationImplementations[station]) stationImplementations[station] = {};
+          
+          if (content && mat) {
+            if (mat === "SCTX") stationImplementations[station]["SCTX"] = content;
+            if (mat === "SCL") stationImplementations[station]["SCL"] = content;
+            if (mat === "Vướng ĐTXD") stationImplementations[station]["Vướng ĐTXD"] = content;
+            if (mat === "ĐTXD") stationImplementations[station]["ĐTXD"] = content;
           }
-        });
-      }
+        }
+      });
     }
 
     return dataSheet.slice(1)
@@ -3257,13 +3284,14 @@ export default function App() {
                           
                           if (!capNhatSheet || capNhatSheet.length < 2) return false;
                           const cnHeader = capNhatSheet[0].map(h => normalizeString(String(h || "")));
-                          const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm"));
-                          const cnIdxPl = cnHeader.indexOf(normalizeString("phân loại"));
-                          if (cnIdxTram === -1 || cnIdxPl === -1) return false;
+                          const cnIdxTram = cnHeader.indexOf(normalizeString("tên trạm")) !== -1 ? cnHeader.indexOf(normalizeString("tên trạm")) : 1;
+                          const cnIdxPl = cnHeader.indexOf(normalizeString("phân loại")) !== -1 ? cnHeader.indexOf(normalizeString("phân loại")) : 4;
                           
                           return capNhatSheet.slice(1).some(r => {
+                            const plRaw = String(r[cnIdxPl] || "");
+                            const mat = getNormalizedCategory(plRaw);
                             return normalizeString(String(r[cnIdxTram] || "")) === normalizeString(stationName) && 
-                                   normalizeString(String(r[cnIdxPl] || "")).includes("vuong dtxd");
+                                   mat === "Vướng ĐTXD";
                           });
                         }).length;
                       } else {
