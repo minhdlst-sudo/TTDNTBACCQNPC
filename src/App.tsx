@@ -97,6 +97,29 @@ const normalizeString = (s: string) => {
     .trim();
 };
 
+const isCompanyMatch = (unitA: string, unitB: string): boolean => {
+  const normA = normalizeString(unitA);
+  const normB = normalizeString(unitB);
+  if (!normA || !normB) return false;
+  
+  const clean = (s: string) => s
+    .replace(/^dien luc\s+/, "")
+    .replace(/^pc\s+/, "")
+    .replace(/^p\s+/, "")
+    .replace(/^cong ty\s+/, "")
+    .trim();
+  
+  const cleanA = clean(normA);
+  const cleanB = clean(normB);
+  
+  return cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA);
+};
+
+const normalizeMonthNum = (m: string) => {
+  const match = m.match(/\d+/);
+  return match ? parseInt(match[0], 10).toString() : m.toLowerCase();
+};
+
 const getNormalizedCategory = (plStr: string): string => {
   const norm = normalizeString(plStr);
   if (norm.includes("sctx") || norm.includes("sua chua thuong xuyen") || norm.includes("thuong xuyen")) {
@@ -151,6 +174,112 @@ export default function App() {
   const [selectedCDMonth, setSelectedCDMonth] = useState<string>("");
   const [selectedCDYear, setSelectedCDYear] = useState<string>("");
   const [selectedCDGroup, setSelectedCDGroup] = useState<string>("all");
+  const [selectedAttMonth, setSelectedAttMonth] = useState<string>("");
+  const [selectedAttYear, setSelectedAttYear] = useState<string>("");
+
+  // Helper to discover indices in sheet "Cham diem"
+  const chamDiemIndices = useMemo(() => {
+    if (chamDiemSheet.length === 0) {
+      return { headerIdx: 0, idxDL: 1, idxMonth: 2, idxYear: 3, idxRank: 10, idxGroup: 11 };
+    }
+    
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(chamDiemSheet.length, 5); i++) {
+      const row = chamDiemSheet[i];
+      if (row && row.some(cell => {
+        const s = normalizeString(String(cell || ""));
+        return s.includes("dien luc") || s.includes("don vi") || s.includes("xep hang");
+      })) {
+        headerIdx = i;
+        break;
+      }
+    }
+    
+    const header = chamDiemSheet[headerIdx] ? chamDiemSheet[headerIdx].map(h => normalizeString(String(h || ""))) : [];
+    
+    let idxDL = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+    if (idxDL === -1) idxDL = 1; // Default to Column B
+    
+    let idxMonth = header.findIndex(h => h.includes("thang") || h === "t");
+    if (idxMonth === -1) idxMonth = 2; // Default to Column C
+    
+    let idxYear = header.findIndex(h => h.includes("nam") || h === "n");
+    if (idxYear === -1) idxYear = 3; // Default to Column D
+    
+    let idxRank = header.findIndex(h => h.includes("xep hang") || h.includes("rank") || h === "xh");
+    if (idxRank === -1) idxRank = 10; // Default to Column K
+    
+    let idxGroup = header.findIndex(h => h.includes("nhom") || h.includes("phan loai") || h === "nh");
+    if (idxGroup === -1) idxGroup = 11; // Default to Column L
+    
+    return { headerIdx, idxDL, idxMonth, idxYear, idxRank, idxGroup };
+  }, [chamDiemSheet]);
+
+  const { chamDiemMonths, chamDiemYears, chamDiemGroups } = useMemo(() => {
+    if (chamDiemSheet.length <= 1) {
+      return { chamDiemMonths: [], chamDiemYears: [], chamDiemGroups: [] };
+    }
+    
+    const { headerIdx, idxMonth, idxYear, idxGroup } = chamDiemIndices;
+    const months = new Set<string>();
+    const years = new Set<string>();
+    const groups = new Set<string>();
+    
+    chamDiemSheet.slice(headerIdx + 1).forEach(row => {
+      const m = String(row[idxMonth] || "").trim();
+      const y = String(row[idxYear] || "").trim();
+      const g = String(row[idxGroup] || "").trim();
+      
+      if (m) months.add(m);
+      if (y) years.add(y);
+      if (g) groups.add(g);
+    });
+    
+    const sortedMonths = Array.from(months).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, "")) || 0;
+      const numB = parseInt(b.replace(/\D/g, "")) || 0;
+      return numA - numB;
+    });
+    
+    const sortedYears = Array.from(years).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, "")) || 0;
+      const numB = parseInt(b.replace(/\D/g, "")) || 0;
+      return numB - numA;
+    });
+
+    const sortedGroups = Array.from(groups).sort();
+    
+    return { 
+      chamDiemMonths: sortedMonths, 
+      chamDiemYears: sortedYears,
+      chamDiemGroups: sortedGroups
+    };
+  }, [chamDiemSheet, chamDiemIndices]);
+
+  useEffect(() => {
+    if (chamDiemMonths.length > 0 && !selectedCDMonth) {
+      setSelectedCDMonth(chamDiemMonths[chamDiemMonths.length - 1]);
+    }
+  }, [chamDiemMonths, selectedCDMonth]);
+
+  useEffect(() => {
+    if (chamDiemYears.length > 0 && !selectedCDYear) {
+      setSelectedCDYear(chamDiemYears[0]);
+    }
+  }, [chamDiemYears, selectedCDYear]);
+
+  useEffect(() => {
+    if (chamDiemMonths.length > 0 && !selectedAttMonth) {
+      setSelectedAttMonth(chamDiemMonths[chamDiemMonths.length - 1]);
+    }
+  }, [chamDiemMonths, selectedAttMonth]);
+
+  useEffect(() => {
+    if (chamDiemYears.length > 0 && !selectedAttYear) {
+      setSelectedAttYear(chamDiemYears[0]);
+    }
+  }, [chamDiemYears, selectedAttYear]);
+
   const [selectedMonthTongHop, setSelectedMonthTongHop] = useState<string>(() => {
     const prevMonth = (new Date().getMonth() || 12); // Get previous month (1-12)
     return `Tháng ${prevMonth}`;
@@ -1140,21 +1269,92 @@ export default function App() {
   }, [tongHopSheet, selectedDienLucTongHop, querySortBy]);
 
   const attTuyetDoiData = useMemo(() => {
-    if (thuVienSheet.length < 2) return { data: [], labels: { ae: "Đơn vị", af: "Att Tuyệt đối", ag: "Ghi chú" } };
+    if (thuVienSheet.length < 2) return { data: [], labels: { ae: "Đơn vị", af: "Att LK", ag: "Tỷ trọng (%)" } };
     
     // AE=30, AF=31, AG=32 (0-indexed)
     const header = thuVienSheet[0];
     const aeLabel = String(header[30] || "Đơn vị");
-    const afLabel = String(header[31] || "Att Tuyệt đối");
-    const agLabel = String(header[32] || "Ghi chú");
+    const afLabel = "Att LK";
+    const agLabel = "Tỷ trọng (%)";
+
+    const { headerIdx, idxDL, idxMonth, idxYear } = chamDiemIndices;
+    const targetMonthNum = normalizeMonthNum(selectedAttMonth);
+    const targetYear = selectedAttYear;
+
+    // Find Att LK of Toàn Công ty (parent company) for this month and year in chamDiemSheet
+    let AttLkToanCongTy = 0;
+    if (chamDiemSheet.length > headerIdx) {
+      const parentRow = chamDiemSheet.slice(headerIdx + 1).find(r => {
+        const rowUnit = String(r[idxDL] || "").trim();
+        const normUnit = normalizeString(rowUnit);
+        const rowMonth = String(r[idxMonth] || "").trim();
+        const rowYear = String(r[idxYear] || "").trim();
+        
+        const isParent = normUnit.includes("toan cong ty") || normUnit.includes("tong cong") || normUnit.includes("toan bo");
+        return isParent && 
+               normalizeMonthNum(rowMonth) === targetMonthNum && 
+               rowYear === targetYear;
+      });
+      if (parentRow) {
+        AttLkToanCongTy = parseFloat(String(parentRow[7] || "0").replace(/\./g, '').replace(/,/g, '.'));
+      }
+    }
+
+    // Default fallback to summing if not explicitly found in standard "Toàn công ty" row or if it was 0
+    if (AttLkToanCongTy === 0 && chamDiemSheet.length > headerIdx) {
+      let sum = 0;
+      chamDiemSheet.slice(headerIdx + 1).forEach(r => {
+        const rowUnit = String(r[idxDL] || "").trim();
+        const normUnit = normalizeString(rowUnit);
+        const rowMonth = String(r[idxMonth] || "").trim();
+        const rowYear = String(r[idxYear] || "").trim();
+        if (normalizeMonthNum(rowMonth) === targetMonthNum && rowYear === targetYear) {
+          if (!normUnit.includes("toan cong ty") && !normUnit.includes("tong cong") && normUnit !== "") {
+            const val = parseFloat(String(r[7] || "0").replace(/\./g, '').replace(/,/g, '.'));
+            if (!isNaN(val)) {
+              sum += val;
+            }
+          }
+        }
+      });
+      AttLkToanCongTy = sum;
+    }
 
     const result = thuVienSheet.slice(1)
       .filter(row => row[30] || row[31] || row[32])
-      .map(row => ({
-        ae: String(row[30] || ""),
-        af: String(row[31] || ""),
-        ag: String(row[32] || ""),
-      }));
+      .map(row => {
+        const unitName = String(row[30] || "").trim();
+        let afValue = "0";
+
+        if (chamDiemSheet.length > headerIdx) {
+          const matchRow = chamDiemSheet.slice(headerIdx + 1).find(r => {
+            const rowUnit = String(r[idxDL] || "").trim();
+            const rowMonth = String(r[idxMonth] || "").trim();
+            const rowYear = String(r[idxYear] || "").trim();
+            return isCompanyMatch(rowUnit, unitName) && 
+                   normalizeMonthNum(rowMonth) === targetMonthNum && 
+                   rowYear === targetYear;
+          });
+          if (matchRow) {
+            afValue = String(matchRow[7] || "0").trim();
+          }
+        }
+
+        const parsedAf = parseFloat(afValue.replace(/\./g, '').replace(/,/g, '.'));
+        const isEmptyOrZero = !afValue || isNaN(parsedAf) || parsedAf === 0;
+
+        let agValue = "";
+        if (!isEmptyOrZero && AttLkToanCongTy > 0) {
+          const ratio = (parsedAf * 100) / AttLkToanCongTy;
+          agValue = `${ratio.toFixed(2)}%`;
+        }
+
+        return {
+          ae: unitName,
+          af: afValue,
+          ag: agValue,
+        };
+      });
 
     result.sort((a, b) => {
       const valA = parseFloat(String(a.af).replace(/\./g, '').replace(/,/g, '.'));
@@ -1163,7 +1363,7 @@ export default function App() {
     });
 
     return { data: result, labels: { ae: aeLabel, af: afLabel, ag: agLabel } };
-  }, [thuVienSheet]);
+  }, [thuVienSheet, chamDiemSheet, chamDiemIndices, selectedAttMonth, selectedAttYear]);
 
   const exportAttTuyetDoi = () => {
     const header = [
@@ -1466,125 +1666,12 @@ export default function App() {
       }));
   }, [tongHopSheet, capNhatSheet, selectedDienLucThongKe, selectedStatCategory]);
 
-  // Helper to discover indices in sheet "Cham diem"
-  const chamDiemIndices = useMemo(() => {
-    if (chamDiemSheet.length === 0) {
-      return { headerIdx: 0, idxDL: 1, idxMonth: 2, idxYear: 3, idxRank: 10, idxGroup: 11 };
-    }
-    
-    let headerIdx = 0;
-    for (let i = 0; i < Math.min(chamDiemSheet.length, 5); i++) {
-      const row = chamDiemSheet[i];
-      if (row && row.some(cell => {
-        const s = normalizeString(String(cell || ""));
-        return s.includes("dien luc") || s.includes("don vi") || s.includes("xep hang");
-      })) {
-        headerIdx = i;
-        break;
-      }
-    }
-    
-    const header = chamDiemSheet[headerIdx] ? chamDiemSheet[headerIdx].map(h => normalizeString(String(h || ""))) : [];
-    
-    let idxDL = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
-    if (idxDL === -1) idxDL = 1; // Default to Column B
-    
-    let idxMonth = header.findIndex(h => h.includes("thang") || h === "t");
-    if (idxMonth === -1) idxMonth = 2; // Default to Column C
-    
-    let idxYear = header.findIndex(h => h.includes("nam") || h === "n");
-    if (idxYear === -1) idxYear = 3; // Default to Column D
-    
-    let idxRank = header.findIndex(h => h.includes("xep hang") || h.includes("rank") || h === "xh");
-    if (idxRank === -1) idxRank = 10; // Default to Column K
-    
-    let idxGroup = header.findIndex(h => h.includes("nhom") || h.includes("phan loai") || h === "nh");
-    if (idxGroup === -1) idxGroup = 11; // Default to Column L
-    
-    return { headerIdx, idxDL, idxMonth, idxYear, idxRank, idxGroup };
-  }, [chamDiemSheet]);
-
-  const { chamDiemMonths, chamDiemYears, chamDiemGroups } = useMemo(() => {
-    if (chamDiemSheet.length <= 1) {
-      return { chamDiemMonths: [], chamDiemYears: [], chamDiemGroups: [] };
-    }
-    
-    const { headerIdx, idxMonth, idxYear, idxGroup } = chamDiemIndices;
-    const months = new Set<string>();
-    const years = new Set<string>();
-    const groups = new Set<string>();
-    
-    chamDiemSheet.slice(headerIdx + 1).forEach(row => {
-      const m = String(row[idxMonth] || "").trim();
-      const y = String(row[idxYear] || "").trim();
-      const g = String(row[idxGroup] || "").trim();
-      
-      if (m) months.add(m);
-      if (y) years.add(y);
-      if (g) groups.add(g);
-    });
-    
-    const sortedMonths = Array.from(months).sort((a, b) => {
-      const numA = parseInt(a.replace(/\D/g, "")) || 0;
-      const numB = parseInt(b.replace(/\D/g, "")) || 0;
-      return numA - numB;
-    });
-    
-    const sortedYears = Array.from(years).sort((a, b) => {
-      const numA = parseInt(a.replace(/\D/g, "")) || 0;
-      const numB = parseInt(b.replace(/\D/g, "")) || 0;
-      return numB - numA;
-    });
-
-    const sortedGroups = Array.from(groups).sort();
-    
-    return { 
-      chamDiemMonths: sortedMonths, 
-      chamDiemYears: sortedYears,
-      chamDiemGroups: sortedGroups
-    };
-  }, [chamDiemSheet, chamDiemIndices]);
-
-  useEffect(() => {
-    if (chamDiemMonths.length > 0 && !selectedCDMonth) {
-      setSelectedCDMonth(chamDiemMonths[chamDiemMonths.length - 1]);
-    }
-  }, [chamDiemMonths, selectedCDMonth]);
-
-  useEffect(() => {
-    if (chamDiemYears.length > 0 && !selectedCDYear) {
-      setSelectedCDYear(chamDiemYears[0]);
-    }
-  }, [chamDiemYears, selectedCDYear]);
 
   const scoringData = useMemo(() => {
     if (chamDiemSheet.length <= 1) return [];
     
     const { headerIdx, idxDL, idxMonth, idxYear, idxRank, idxGroup } = chamDiemIndices;
     const rows = chamDiemSheet.slice(headerIdx + 1);
-
-    const isCompanyMatch = (unitA: string, unitB: string): boolean => {
-      const normA = normalizeString(unitA);
-      const normB = normalizeString(unitB);
-      if (!normA || !normB) return false;
-      
-      const clean = (s: string) => s
-        .replace(/^dien luc\s+/, "")
-        .replace(/^pc\s+/, "")
-        .replace(/^p\s+/, "")
-        .replace(/^cong ty\s+/, "")
-        .trim();
-      
-      const cleanA = clean(normA);
-      const cleanB = clean(normB);
-      
-      return cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA);
-    };
-
-    const normalizeMonthNum = (m: string) => {
-      const match = m.match(/\d+/);
-      return match ? parseInt(match[0], 10).toString() : m.toLowerCase();
-    };
 
     const targetMonthNum = normalizeMonthNum(selectedCDMonth);
 
@@ -3416,20 +3503,56 @@ export default function App() {
           className="flex-none mb-6"
         >
           <Card className="shadow-sm border-border bg-white flex flex-col">
-            <CardHeader className="flex flex-row items-center justify-between py-3 px-4 bg-slate-50 border-b space-y-0 text-center">
-              <CardTitle className="text-[14px] font-bold text-slate-700 flex items-center justify-center gap-2 uppercase tracking-tight w-full relative">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between py-3 px-4 bg-slate-50 border-b gap-3">
+              <div className="flex items-center gap-2">
                 <TableIcon className="w-4 h-4 text-emerald-600" />
-                Tổng hợp Att tuyệt đối
+                <CardTitle className="text-[14px] font-bold text-slate-700 uppercase tracking-tight">
+                  Tổng hợp Att tuyệt đối
+                </CardTitle>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto self-stretch justify-end">
+                {/* Month dropdown */}
+                <div className="flex items-center gap-1.5 text-slate-500 font-medium">
+                  <span className="text-[12px]">Tháng:</span>
+                  <Select value={selectedAttMonth} onValueChange={setSelectedAttMonth}>
+                    <SelectTrigger className="h-8 w-[100px] text-[12px] bg-white border-slate-200">
+                      <SelectValue placeholder="Tháng" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-[250px]">
+                      {chamDiemMonths.map(m => (
+                        <SelectItem key={m} value={m}>{m.toLowerCase().startsWith("tháng") ? m : `Tháng ${m}`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Year dropdown */}
+                <div className="flex items-center gap-1.5 text-slate-500 font-medium">
+                  <span className="text-[12px]">Năm:</span>
+                  <Select value={selectedAttYear} onValueChange={setSelectedAttYear}>
+                    <SelectTrigger className="h-8 w-[90px] text-[12px] bg-white border-slate-200">
+                      <SelectValue placeholder="Năm" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-[250px]">
+                      {chamDiemYears.map(y => (
+                        <SelectItem key={y} value={y}>{y.toLowerCase().startsWith("năm") ? y : `Năm ${y}`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Export excel */}
                 <Button 
                   variant="outline" 
                   size="sm" 
                   onClick={exportAttTuyetDoi}
-                  className="absolute right-0 h-7 text-[11px] gap-1 px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                  className="h-8 text-[12px] gap-1 px-3 border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-white shadow-sm"
                 >
-                  <Download className="w-3 h-3" />
+                  <Download className="w-3.5 h-3.5" />
                   Xuất Excel
                 </Button>
-              </CardTitle>
+              </div>
             </CardHeader>
             <CardContent className="p-0 overflow-auto relative max-h-[400px]">
               <table className="w-full border-separate border-spacing-0">
