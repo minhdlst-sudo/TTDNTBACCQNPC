@@ -278,6 +278,22 @@ app.get("/api/sheets/mang-tai", async (req, res) => {
   }
 });
 
+app.get("/api/sheets/cham-diem", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "'Cham diem'!A:AZ",
+    });
+    const values = response.data.values || [];
+    console.log(`Fetched ${values.length} rows from 'Cham diem' sheet at ${new Date().toISOString()}`);
+    res.json(values);
+  } catch (error: any) {
+    console.error("Error fetching 'Cham diem' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/sheets/mang-tai", async (req, res) => {
   try {
     const sheets = getSheetsClient();

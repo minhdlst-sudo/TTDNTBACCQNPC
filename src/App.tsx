@@ -147,6 +147,10 @@ export default function App() {
   const [lkCdaSheet, setLkCdaSheet] = useState<SheetData>([]);
   const [tbaSheet, setTbaSheet] = useState<SheetData>([]);
   const [mangTaiSheet, setMangTaiSheet] = useState<SheetData>([]);
+  const [chamDiemSheet, setChamDiemSheet] = useState<SheetData>([]);
+  const [selectedCDMonth, setSelectedCDMonth] = useState<string>("");
+  const [selectedCDYear, setSelectedCDYear] = useState<string>("");
+  const [selectedCDGroup, setSelectedCDGroup] = useState<string>("all");
   const [selectedMonthTongHop, setSelectedMonthTongHop] = useState<string>(() => {
     const prevMonth = (new Date().getMonth() || 12); // Get previous month (1-12)
     return `Tháng ${prevMonth}`;
@@ -633,7 +637,7 @@ export default function App() {
     try {
       // Add timestamp to bypass browser cache
       const ts = Date.now();
-      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes, tbaRes, mangTaiRes] = await Promise.all([
+      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes, tbaRes, mangTaiRes, chamDiemRes] = await Promise.all([
         fetch(`/api/sheets/data?t=${ts}`),
         fetch(`/api/sheets/cap-nhat?t=${ts}`),
         fetch(`/api/sheets/thu-vien?t=${ts}`),
@@ -641,10 +645,11 @@ export default function App() {
         fetch(`/api/sheets/luu?t=${ts}`),
         fetch(`/api/sheets/lk-cda?t=${ts}`),
         fetch(`/api/sheets/tba?t=${ts}`),
-        fetch(`/api/sheets/mang-tai?t=${ts}`)
+        fetch(`/api/sheets/mang-tai?t=${ts}`),
+        fetch(`/api/sheets/cham-diem?t=${ts}`)
       ]);
 
-      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok || !tbaRes.ok || !mangTaiRes.ok) {
+      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok || !tbaRes.ok || !mangTaiRes.ok || !chamDiemRes.ok) {
         throw new Error("Failed to fetch data from sheets");
       }
 
@@ -656,6 +661,7 @@ export default function App() {
       const lkCda = await lkCdaRes.json();
       const tba = await tbaRes.json();
       const mangTai = await mangTaiRes.json();
+      const chamDiem = await chamDiemRes.json();
 
       console.log("Data fetched:", { 
         dataRows: data.length, 
@@ -665,7 +671,8 @@ export default function App() {
         luuRows: luu.length,
         lkCdaRows: lkCda.length,
         tbaRows: tba.length,
-        mangTaiRows: mangTai.length
+        mangTaiRows: mangTai.length,
+        chamDiemRows: chamDiem.length
       });
 
       setDataSheet(data);
@@ -676,6 +683,7 @@ export default function App() {
       setLkCdaSheet(lkCda);
       setTbaSheet(tba);
       setMangTaiSheet(mangTai);
+      setChamDiemSheet(chamDiem);
       setLastSync(new Date());
       
       if (ts) {
@@ -1458,11 +1466,297 @@ export default function App() {
       }));
   }, [tongHopSheet, capNhatSheet, selectedDienLucThongKe, selectedStatCategory]);
 
+  // Helper to discover indices in sheet "Cham diem"
+  const chamDiemIndices = useMemo(() => {
+    if (chamDiemSheet.length === 0) {
+      return { headerIdx: 0, idxDL: 1, idxMonth: 2, idxYear: 3, idxRank: 10, idxGroup: 11 };
+    }
+    
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(chamDiemSheet.length, 5); i++) {
+      const row = chamDiemSheet[i];
+      if (row && row.some(cell => {
+        const s = normalizeString(String(cell || ""));
+        return s.includes("dien luc") || s.includes("don vi") || s.includes("xep hang");
+      })) {
+        headerIdx = i;
+        break;
+      }
+    }
+    
+    const header = chamDiemSheet[headerIdx] ? chamDiemSheet[headerIdx].map(h => normalizeString(String(h || ""))) : [];
+    
+    let idxDL = header.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+    if (idxDL === -1) idxDL = 1; // Default to Column B
+    
+    let idxMonth = header.findIndex(h => h.includes("thang") || h === "t");
+    if (idxMonth === -1) idxMonth = 2; // Default to Column C
+    
+    let idxYear = header.findIndex(h => h.includes("nam") || h === "n");
+    if (idxYear === -1) idxYear = 3; // Default to Column D
+    
+    let idxRank = header.findIndex(h => h.includes("xep hang") || h.includes("rank") || h === "xh");
+    if (idxRank === -1) idxRank = 10; // Default to Column K
+    
+    let idxGroup = header.findIndex(h => h.includes("nhom") || h.includes("phan loai") || h === "nh");
+    if (idxGroup === -1) idxGroup = 11; // Default to Column L
+    
+    return { headerIdx, idxDL, idxMonth, idxYear, idxRank, idxGroup };
+  }, [chamDiemSheet]);
+
+  const { chamDiemMonths, chamDiemYears, chamDiemGroups } = useMemo(() => {
+    if (chamDiemSheet.length <= 1) {
+      return { chamDiemMonths: [], chamDiemYears: [], chamDiemGroups: [] };
+    }
+    
+    const { headerIdx, idxMonth, idxYear, idxGroup } = chamDiemIndices;
+    const months = new Set<string>();
+    const years = new Set<string>();
+    const groups = new Set<string>();
+    
+    chamDiemSheet.slice(headerIdx + 1).forEach(row => {
+      const m = String(row[idxMonth] || "").trim();
+      const y = String(row[idxYear] || "").trim();
+      const g = String(row[idxGroup] || "").trim();
+      
+      if (m) months.add(m);
+      if (y) years.add(y);
+      if (g) groups.add(g);
+    });
+    
+    const sortedMonths = Array.from(months).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, "")) || 0;
+      const numB = parseInt(b.replace(/\D/g, "")) || 0;
+      return numA - numB;
+    });
+    
+    const sortedYears = Array.from(years).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, "")) || 0;
+      const numB = parseInt(b.replace(/\D/g, "")) || 0;
+      return numB - numA;
+    });
+
+    const sortedGroups = Array.from(groups).sort();
+    
+    return { 
+      chamDiemMonths: sortedMonths, 
+      chamDiemYears: sortedYears,
+      chamDiemGroups: sortedGroups
+    };
+  }, [chamDiemSheet, chamDiemIndices]);
+
+  useEffect(() => {
+    if (chamDiemMonths.length > 0 && !selectedCDMonth) {
+      setSelectedCDMonth(chamDiemMonths[chamDiemMonths.length - 1]);
+    }
+  }, [chamDiemMonths, selectedCDMonth]);
+
+  useEffect(() => {
+    if (chamDiemYears.length > 0 && !selectedCDYear) {
+      setSelectedCDYear(chamDiemYears[0]);
+    }
+  }, [chamDiemYears, selectedCDYear]);
+
   const scoringData = useMemo(() => {
-    return statisticsData
-      .filter(s => s.company !== "TỔNG CỘNG")
-      .sort((a, b) => (b.score || 0) - (a.score || 0));
-  }, [statisticsData]);
+    if (chamDiemSheet.length <= 1) return [];
+    
+    const { headerIdx, idxDL, idxMonth, idxYear, idxRank, idxGroup } = chamDiemIndices;
+    const rows = chamDiemSheet.slice(headerIdx + 1);
+
+    const isCompanyMatch = (unitA: string, unitB: string): boolean => {
+      const normA = normalizeString(unitA);
+      const normB = normalizeString(unitB);
+      if (!normA || !normB) return false;
+      
+      const clean = (s: string) => s
+        .replace(/^dien luc\s+/, "")
+        .replace(/^pc\s+/, "")
+        .replace(/^p\s+/, "")
+        .replace(/^cong ty\s+/, "")
+        .trim();
+      
+      const cleanA = clean(normA);
+      const cleanB = clean(normB);
+      
+      return cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA);
+    };
+
+    const normalizeMonthNum = (m: string) => {
+      const match = m.match(/\d+/);
+      return match ? parseInt(match[0], 10).toString() : m.toLowerCase();
+    };
+
+    const targetMonthNum = normalizeMonthNum(selectedCDMonth);
+
+    // Get Cap Da plans
+    const unitPlansCapDa: Record<string, number[]> = {};
+    if (thuVienSheet.length > 0) {
+      thuVienSheet.slice(1).forEach(row => {
+        const unit = String(row[18] || "").trim();
+        if (unit && unit !== "Đơn vị") {
+          unitPlansCapDa[unit] = [
+            parseFloat(String(row[19] || "0").replace(',', '.')),
+            parseFloat(String(row[20] || "0").replace(',', '.')),
+            parseFloat(String(row[21] || "0").replace(',', '.')),
+            parseFloat(String(row[22] || "0").replace(',', '.'))
+          ];
+        }
+      });
+    }
+
+    // Get TTDN plans
+    const unitPlansTtdn: Record<string, any> = {};
+    if (thuVienSheet.length > 1) {
+      thuVienSheet.slice(1).forEach(row => {
+        const unitPlan = String(row[5] || "").trim();
+        if (unitPlan && unitPlan !== "Đơn vị" && unitPlan !== "ĐV") {
+          unitPlansTtdn[unitPlan] = {
+            "<=4": 0,
+            "4<x<=5": parseInt(String(row[6] || "0")) || 0,
+            "5<x<=6": parseInt(String(row[7] || "0")) || 0,
+            "6<x<=7": parseInt(String(row[8] || "0")) || 0,
+            ">7": parseInt(String(row[9] || "0")) || 0
+          };
+        }
+      });
+    }
+    
+    return rows
+      .filter(row => {
+        const company = String(row[idxDL] || "").trim();
+        const m = String(row[idxMonth] || "").trim();
+        const y = String(row[idxYear] || "").trim();
+        const g = String(row[idxGroup] || "").trim();
+        
+        // Remove empty, general totals and "Toàn Công ty" lines
+        const normCompany = normalizeString(company);
+        if (!company || normCompany.includes("toan cong ty") || normCompany.includes("tong cong")) {
+          return false;
+        }
+        
+        const matchesMonth = !selectedCDMonth || m === selectedCDMonth;
+        const matchesYear = !selectedCDYear || y === selectedCDYear;
+        
+        let matchesGroup = true;
+        if (selectedCDGroup !== "all") {
+          const normG = normalizeString(g);
+          const normSel = normalizeString(selectedCDGroup);
+          matchesGroup = normG.includes(normSel) || normSel.includes(normG);
+        }
+        
+        return matchesMonth && matchesYear && matchesGroup;
+      })
+      .map(row => {
+        const compName = String(row[idxDL] || "").trim();
+        const rank = String(row[idxRank] || "").trim();
+        const group = String(row[idxGroup] || "").trim();
+        const month = String(row[idxMonth] || "").trim();
+        const year = String(row[idxYear] || "").trim();
+
+        // 1. Rule 1 - TTDN
+        const notesRule1: string[] = [];
+        const ttdnKey = Object.keys(unitPlansTtdn).find(k => isCompanyMatch(k, compName));
+        const companyPlanTtdn = ttdnKey ? unitPlansTtdn[ttdnKey] : { "<=4": 0, "4<x<=5": 0, "5<x<=6": 0, "6<x<=7": 0, ">7": 0 };
+
+        const actualCounts = {
+          "<=4": 0,
+          "4<x<=5": 0,
+          "5<x<=6": 0,
+          "6<x<=7": 0,
+          ">7": 0
+        };
+
+        const idxLuuMonth = 6;
+        const idxLuuUnit = 1;
+        const idxLuuMetric = 5;
+
+        luuSheet.slice(1).forEach(luuRow => {
+          const unit = String(luuRow[idxLuuUnit] || "").trim();
+          if (!isCompanyMatch(unit, compName)) return;
+
+          const monthRaw = String(luuRow[idxLuuMonth] || "").trim();
+          if (normalizeMonthNum(monthRaw) !== targetMonthNum) return;
+
+          const val = luuRow[idxLuuMetric];
+          const category = (v: any) => {
+            const cleanVal = String(v || "").replace(/,/g, '.').replace('%', '').trim();
+            const num = parseFloat(cleanVal);
+            if (isNaN(num)) return null;
+            if (num <= 4) return "<=4";
+            if (num <= 5) return "4<x<=5";
+            if (num <= 6) return "5<x<=6";
+            if (num <= 7) return "6<x<=7";
+            return ">7";
+          };
+
+          const cat = category(val);
+          if (cat) {
+            actualCounts[cat]++;
+          }
+        });
+
+        const categoriesToCheck = [
+          { key: ">7", label: "> 7%" },
+          { key: "6<x<=7", label: "6-7%" },
+          { key: "5<x<=6", label: "5-6%" },
+          { key: "4<x<=5", label: "4-5%" }
+        ] as const;
+
+        categoriesToCheck.forEach(cat => {
+          const act = actualCounts[cat.key];
+          const pl = companyPlanTtdn[cat.key] || 0;
+          if (act > pl) {
+            notesRule1.push(`Mức ${cat.label}: KH: ${pl}, TH: ${act}, Số TBA cần giảm = ${act - pl}`);
+          }
+        });
+
+        // 2. Rule 2 - Cap Dien Ap
+        let notesRule2 = "";
+        const capDaKey = Object.keys(unitPlansCapDa).find(k => isCompanyMatch(k, compName));
+        const planArrayCapDa = capDaKey ? unitPlansCapDa[capDaKey] : [0, 0, 0, 0];
+
+        const haApIdx = lkCdaSheet[0]
+          ? lkCdaSheet[0].findIndex((h, idx) => idx >= 1 && idx <= 4 && normalizeString(String(h || "")).includes("ha ap"))
+          : -1;
+        const haApSubIdx = haApIdx !== -1 ? haApIdx - 1 : 3;
+
+        const matchLdaRow = lkCdaSheet.slice(1).find(ldaRow => {
+          const unit = String(ldaRow[0] || "").trim();
+          const monthRaw = String(ldaRow[5] || "").trim();
+          return isCompanyMatch(unit, compName) && normalizeMonthNum(monthRaw) === targetMonthNum;
+        });
+
+        if (matchLdaRow) {
+          const actualVal = parseFloat(String(matchLdaRow[haApSubIdx + 1] || "0").replace(',', '.'));
+          const planVal = planArrayCapDa[haApSubIdx];
+          if (!isNaN(actualVal) && !isNaN(planVal) && actualVal > planVal) {
+            notesRule2 = `Hạ áp: KH: ${planVal}%, TH: ${actualVal}%, TTĐN% cần giảm = ${(actualVal - planVal).toFixed(2)}%`;
+          }
+        }
+
+        const attentionNotes: string[] = [];
+        if (notesRule1.length > 0) {
+          attentionNotes.push(notesRule1.join("; "));
+        }
+        if (notesRule2) {
+          attentionNotes.push(notesRule2);
+        }
+
+        return {
+          company: compName,
+          rank: rank,
+          group: group,
+          month: month,
+          year: year,
+          attention: attentionNotes.length > 0 ? attentionNotes.join("\n") : ""
+        };
+      })
+      .sort((a, b) => {
+        const rankA = parseInt(a.rank) || 999;
+        const rankB = parseInt(b.rank) || 999;
+        return rankA - rankB;
+      });
+  }, [chamDiemSheet, chamDiemIndices, selectedCDMonth, selectedCDYear, selectedCDGroup, luuSheet, thuVienSheet, lkCdaSheet]);
 
   const planComparison = useMemo(() => {
     if (dataSheet.length < 2 || capNhatSheet.length < 2) {
@@ -4045,13 +4339,59 @@ export default function App() {
 
           {/* Scoring Table */}
           <Card className="xl:col-span-3 shadow-sm border-border bg-white mt-6">
-            <CardHeader className="bg-slate-50 border-b border-border py-2 sm:py-3 px-3 sm:px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-              <CardTitle className="text-[14px] sm:text-[16px] font-bold text-slate-800 flex items-center gap-2">
+            <CardHeader className="bg-slate-50 border-b border-border py-2.5 sm:py-3.5 px-3 sm:px-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 sm:w-5 h-5 text-emerald-600" />
-                Bảng chấm điểm hiệu quả
-              </CardTitle>
-              <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 italic">
-                * Sắp xếp theo điểm số từ cao đến thấp
+                <CardTitle className="text-[14px] sm:text-[16px] font-bold text-slate-800">
+                  Vị thứ xếp hạng thi đua
+                </CardTitle>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Month dropdown */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] sm:text-[12px] font-medium text-slate-500 whitespace-nowrap">Tháng:</span>
+                  <Select value={selectedCDMonth} onValueChange={setSelectedCDMonth}>
+                    <SelectTrigger className="h-8 w-[100px] text-[11px] sm:text-[12px] bg-white border-slate-200">
+                      <SelectValue placeholder="Tháng" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-[250px]">
+                      {chamDiemMonths.map(m => (
+                        <SelectItem key={m} value={m}>{m.toLowerCase().startsWith("tháng") ? m : `Tháng ${m}`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Year dropdown */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] sm:text-[12px] font-medium text-slate-500 whitespace-nowrap">Năm:</span>
+                  <Select value={selectedCDYear} onValueChange={setSelectedCDYear}>
+                    <SelectTrigger className="h-8 w-[100px] text-[11px] sm:text-[12px] bg-white border-slate-200">
+                      <SelectValue placeholder="Năm" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-[250px]">
+                      {chamDiemYears.map(y => (
+                        <SelectItem key={y} value={y}>{y.toLowerCase().startsWith("năm") ? y : `Năm ${y}`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Group dropdown */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] sm:text-[12px] font-medium text-slate-500 whitespace-nowrap">Nhóm:</span>
+                  <Select value={selectedCDGroup} onValueChange={setSelectedCDGroup}>
+                    <SelectTrigger className="h-8 w-[110px] text-[11px] sm:text-[12px] bg-white border-slate-200">
+                      <SelectValue placeholder="Nhóm" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="all">Tất cả</SelectItem>
+                      <SelectItem value="1">Nhóm 1</SelectItem>
+                      <SelectItem value="2">Nhóm 2</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-hidden">
@@ -4059,39 +4399,60 @@ export default function App() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-100 hover:bg-slate-100">
-                      <TableHead className="w-[60px] sm:w-[80px] text-center font-bold px-2 text-[11px] sm:text-[13px]">Thứ hạng</TableHead>
-                      <TableHead className="font-bold px-2 text-[11px] sm:text-[13px]">Điện lực</TableHead>
-                      <TableHead className="text-center font-bold px-2 text-[11px] sm:text-[13px]">Điểm số</TableHead>
-                      <TableHead className="text-center font-bold hidden md:table-cell px-2 text-[11px] sm:text-[13px]">Trạng thái hiệu quả</TableHead>
+                      <TableHead className="w-[80px] text-center font-bold px-3 text-[11px] sm:text-[13px]">Xếp hạng</TableHead>
+                      <TableHead className="font-bold px-3 text-[11px] sm:text-[13px]">Điện lực</TableHead>
+                      <TableHead className="text-center font-bold px-3 text-[11px] sm:text-[13px]">Nhóm</TableHead>
+                      <TableHead className="text-center font-bold hidden sm:table-cell px-3 text-[11px] sm:text-[13px]">Thời gian</TableHead>
+                      <TableHead className="font-bold px-3 text-[11px] sm:text-[13px]">Chú ý</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {scoringData.map((stat, idx) => (
-                      <TableRow key={idx} className="hover:bg-slate-50 transition-colors">
-                        <TableCell className="text-center font-bold px-2 py-2.5 sm:py-4">
-                          {idx === 0 ? <span className="text-base sm:text-xl">🥇</span> : 
-                           idx === 1 ? <span className="text-base sm:text-xl">🥈</span> :
-                           idx === 2 ? <span className="text-base sm:text-xl">🥉</span> : <span className="text-[11px] sm:text-[14px]">{idx + 1}</span>}
-                        </TableCell>
-                        <TableCell className="font-semibold text-slate-700 px-2 py-2.5 sm:py-4 text-[11px] sm:text-[14px]">{stat.company}</TableCell>
-                        <TableCell className="text-center font-bold text-sm sm:text-lg text-blue-600 px-2 py-2.5 sm:py-4">
-                          {stat.score.toFixed(1)}
-                        </TableCell>
-                        <TableCell className="text-center hidden md:table-cell px-2 py-3 sm:py-4">
-                          <div className={cn(
-                            "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
-                            stat.score >= 150 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                            stat.score >= 100 ? "bg-blue-50 text-blue-700 border-blue-200" :
-                            stat.score >= 50 ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
-                            "bg-red-50 text-red-700 border-red-200"
-                          )}>
-                            {stat.score >= 150 ? "Xuất sắc" :
-                             stat.score >= 100 ? "Tốt" :
-                             stat.score >= 50 ? "Trung bình" : "Cần cải thiện"}
-                          </div>
+                    {scoringData.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-32 text-center text-slate-400 text-[12px] sm:text-[13px]">
+                          Không có dữ liệu chấm điểm cho kỳ đã chọn.
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      scoringData.map((stat, idx) => {
+                        const rankNum = parseFloat(stat.rank) || (idx + 1);
+                        return (
+                          <TableRow key={idx} className="hover:bg-slate-50 transition-colors">
+                            <TableCell className="text-center font-bold px-3 py-2.5 sm:py-3.5">
+                              {rankNum === 1 ? <span className="text-base sm:text-lg md:text-xl">🥇</span> : 
+                               rankNum === 2 ? <span className="text-base sm:text-lg md:text-xl">🥈</span> :
+                               rankNum === 3 ? <span className="text-base sm:text-lg md:text-xl">🥉</span> : 
+                               <span className="text-[11px] sm:text-[14px]">{stat.rank || rankNum}</span>}
+                            </TableCell>
+                            <TableCell className="font-semibold text-slate-700 px-3 py-2.5 sm:py-3.5 text-[11px] sm:text-[14px]">{stat.company}</TableCell>
+                            <TableCell className="text-center px-3 py-2.5 sm:py-3.5">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border",
+                                stat.group.includes("1") ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                stat.group.includes("2") ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                "bg-slate-50 text-slate-700 border-slate-200"
+                              )}>
+                                {stat.group.startsWith("Nhóm") ? stat.group : `Nhóm ${stat.group}`}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center hidden sm:table-cell px-3 py-2.5 sm:py-3.5 text-slate-500 text-[11px] sm:text-[13px]">
+                              {stat.month.toLowerCase().startsWith("tháng") 
+                                ? stat.month.charAt(0).toUpperCase() + stat.month.slice(1) 
+                                : `Tháng ${stat.month}`}/{stat.year}
+                            </TableCell>
+                            <TableCell className="px-3 py-2.5 sm:py-3.5 text-[11px] sm:text-[13px] max-w-[300px]">
+                              {stat.attention ? (
+                                <div className="space-y-1 text-red-600 font-semibold whitespace-pre-line text-left leading-relaxed">
+                                  {stat.attention}
+                                </div>
+                              ) : (
+                                <span className="text-emerald-600 font-medium">Bình thường</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
                   </TableBody>
                 </Table>
               </div>
