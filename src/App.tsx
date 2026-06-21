@@ -327,6 +327,8 @@ export default function App() {
   const [openFilterCapNhat, setOpenFilterCapNhat] = useState(false);
   const [openFilterDonVi, setOpenFilterDonVi] = useState(false);
   const [openDienLuc, setOpenDienLuc] = useState(false);
+  const [addStationSearch, setAddStationSearch] = useState("");
+  const [filterStationSearch, setFilterStationSearch] = useState("");
   const [selectedDienLucThongKe, setSelectedDienLucThongKe] = useState("all");
   const [openDienLucThongKe, setOpenDienLucThongKe] = useState(false);
   const [selectedStatCategory, setSelectedStatCategory] = useState("Đã thực hiện");
@@ -1012,24 +1014,28 @@ export default function App() {
     ).sort();
   }, [thuVienSheet]);
 
-  const getPlanStatus = useCallback((stationName: string) => {
-    if (dataSheet.length < 2) return "Ngoài KH năm";
+  const stationsInPlanSet = useMemo(() => {
+    if (dataSheet.length < 2) return new Set<string>();
 
     const header = dataSheet[0].map(h => normalizeString(String(h || "")));
     const idxTram = header.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
     
-    if (idxTram === -1) return "Ngoài KH năm";
+    if (idxTram === -1) return new Set<string>();
 
-    const normName = normalizeString(stationName);
-    const matchRow = dataSheet.slice(1).find(row => {
+    const planSet = new Set<string>();
+    dataSheet.slice(1).forEach(row => {
       const rowStationName = normalizeString(String(row[idxTram] || ""));
-      return rowStationName === normName;
+      if (rowStationName) {
+        planSet.add(rowStationName);
+      }
     });
-
-    if (!matchRow) return "Ngoài KH năm";
-
-    return "Trong KH năm";
+    return planSet;
   }, [dataSheet]);
+
+  const getPlanStatus = useCallback((stationName: string) => {
+    const normName = normalizeString(stationName);
+    return stationsInPlanSet.has(normName) ? "Trong KH năm" : "Ngoài KH năm";
+  }, [stationsInPlanSet]);
 
   const stationNames = useMemo(() => {
     if (tbaSheet.length === 0) return [];
@@ -1080,6 +1086,37 @@ export default function App() {
       )
     ).sort() as string[];
   }, [tbaSheet, dienLuc]);
+
+  // High performance filtered station arrays for UI rendering (shows max 100 entries to avoid DOM overload)
+  const filteredStationNamesForAdd = useMemo(() => {
+    if (!addStationSearch.trim()) {
+      return stationNames.slice(0, 100);
+    }
+    const searchNorm = normalizeString(addStationSearch);
+    const result = [];
+    for (const name of stationNames) {
+      if (normalizeString(name).includes(searchNorm)) {
+        result.push(name);
+        if (result.length >= 100) break;
+      }
+    }
+    return result;
+  }, [stationNames, addStationSearch]);
+
+  const filteredStationNamesForFilter = useMemo(() => {
+    if (!filterStationSearch.trim()) {
+      return stationNames.slice(0, 100);
+    }
+    const searchNorm = normalizeString(filterStationSearch);
+    const result = [];
+    for (const name of stationNames) {
+      if (normalizeString(name).includes(searchNorm)) {
+        result.push(name);
+        if (result.length >= 100) break;
+      }
+    }
+    return result;
+  }, [stationNames, filterStationSearch]);
 
   const [selectedStationTongHop, setSelectedStationTongHop] = useState("");
   const [selectedDienLucTongHop, setSelectedDienLucTongHop] = useState("all");
@@ -2777,12 +2814,20 @@ export default function App() {
                         align="start"
                         sideOffset={0}
                       >
-                        <Command>
-                          <CommandInput placeholder="Nhập tên trạm để tìm..." className="h-9 text-[13px]" autoFocus={false} />
+                        <Command shouldFilter={false}>
+                          <CommandInput 
+                            placeholder="Nhập tên trạm để tìm..." 
+                            className="h-9 text-[13px]" 
+                            autoFocus={false} 
+                            value={addStationSearch}
+                            onValueChange={setAddStationSearch}
+                          />
                           <CommandList className="max-h-[300px]">
-                            <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
+                            {filteredStationNamesForAdd.length === 0 && (
+                              <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
+                            )}
                             <CommandGroup>
-                              {stationNames.map((name) => {
+                              {filteredStationNamesForAdd.map((name) => {
                                 const planStatus = getPlanStatus(name);
                                 return (
                                   <CommandItem
@@ -2791,6 +2836,7 @@ export default function App() {
                                     onSelect={() => {
                                       setTenTram(name);
                                       setOpenTenTram(false);
+                                      setAddStationSearch("");
                                     }}
                                     className="text-[13px] cursor-pointer flex items-center justify-between"
                                   >
@@ -2809,7 +2855,7 @@ export default function App() {
                                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                         : "bg-amber-50 text-amber-700 border border-amber-200"
                                     )}>
-                                      {planStatus}
+                                      {planStatus === "Trong KH năm" ? "Trong KH" : "Ngoài KH"}
                                     </span>
                                   </CommandItem>
                                 );
@@ -3144,23 +3190,32 @@ export default function App() {
                       align="start"
                       sideOffset={0}
                     >
-                      <Command>
-                        <CommandInput placeholder="Tìm trạm..." className="h-8 text-[12px]" autoFocus={false} />
+                      <Command shouldFilter={false}>
+                        <CommandInput 
+                          placeholder="Tìm trạm..." 
+                          className="h-8 text-[12px]" 
+                          autoFocus={false} 
+                          value={filterStationSearch}
+                          onValueChange={setFilterStationSearch}
+                        />
                         <CommandList>
-                          <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                          {filteredStationNamesForFilter.length === 0 && (
+                            <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
+                          )}
                           <CommandGroup>
                             <CommandItem
                               value="all"
                               onSelect={() => {
                                 setFilterTenTram("all");
                                 setOpenFilterCapNhat(false);
+                                setFilterStationSearch("");
                               }}
                               className="text-[12px] cursor-pointer"
                             >
                               <Check className={cn("mr-2 h-3 w-3", filterTenTram === "all" ? "opacity-100" : "opacity-0")} />
                               Tất cả các trạm
                             </CommandItem>
-                            {stationNames.map((name) => {
+                            {filteredStationNamesForFilter.map((name) => {
                               const planStatus = getPlanStatus(name);
                               return (
                                 <CommandItem
@@ -3169,6 +3224,7 @@ export default function App() {
                                   onSelect={(val) => {
                                     setFilterTenTram(val);
                                     setOpenFilterCapNhat(false);
+                                    setFilterStationSearch("");
                                   }}
                                   className="text-[12px] cursor-pointer flex items-center justify-between"
                                 >
