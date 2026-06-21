@@ -202,13 +202,13 @@ app.get("/api/sheets/tba", async (req, res) => {
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: "'TBA'!A:AZ",
+      range: "'Ten tram'!A:AZ",
     });
     const values = response.data.values || [];
-    console.log(`Fetched ${values.length} rows from 'TBA' sheet at ${new Date().toISOString()}`);
+    console.log(`Fetched ${values.length} rows from 'Ten tram' sheet at ${new Date().toISOString()}`);
     res.json(values);
   } catch (error: any) {
-    console.error("Error fetching 'TBA' sheet:", error);
+    console.error("Error fetching 'Ten tram' sheet:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -220,7 +220,7 @@ app.post("/api/sheets/tba", async (req, res) => {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: "'TBA'!A:D",
+      range: "'Ten tram'!A:D",
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [[dienLuc, tenTram, sdm, ngayDongDien]],
@@ -229,7 +229,7 @@ app.post("/api/sheets/tba", async (req, res) => {
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Error appending to 'TBA' sheet:", error);
+    console.error("Error appending to 'Ten tram' sheet:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -244,7 +244,7 @@ app.put("/api/sheets/tba", async (req, res) => {
     }
 
     const rowNumber = rowIndex + 1;
-    const range = `'TBA'!A${rowNumber}:D${rowNumber}`;
+    const range = `'Ten tram'!A${rowNumber}:D${rowNumber}`;
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
@@ -257,7 +257,7 @@ app.put("/api/sheets/tba", async (req, res) => {
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Error updating 'TBA' sheet:", error);
+    console.error("Error updating 'Ten tram' sheet:", error);
     res.status(500).json({ error: error.message });
   }
 });

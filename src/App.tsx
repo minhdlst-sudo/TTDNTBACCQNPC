@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { AppLogo } from "./components/AppLogo";
 import { 
@@ -530,14 +530,19 @@ export default function App() {
     const unitsData: Record<string, { total: number, updated: number, missing: string[], originalUnitName: string }> = {};
     
     const tbaHeader = tbaSheet[0] || [];
-    const idxDL_Tba = tbaHeader.findIndex(h => {
+    let idxDL_Tba = tbaHeader.findIndex(h => {
       const nh = normalizeString(String(h || ""));
       return nh.includes("dien luc") || nh.includes("don vi") || nh === "dl";
     });
-    const idxTram_Tba = tbaHeader.findIndex(h => {
+    let idxTram_Tba = tbaHeader.findIndex(h => {
       const nh = normalizeString(String(h || ""));
       return nh.includes("ten tram") || nh.includes("ten tba") || nh.includes("tram bien ap");
     });
+
+    if (tbaHeader.length > 2) {
+      if (idxTram_Tba === -1) idxTram_Tba = 2;
+      if (idxDL_Tba === -1) idxDL_Tba = 1;
+    }
 
     if (idxDL_Tba === -1 || idxTram_Tba === -1) return [];
 
@@ -1007,65 +1012,74 @@ export default function App() {
     ).sort();
   }, [thuVienSheet]);
 
+  const getPlanStatus = useCallback((stationName: string) => {
+    if (dataSheet.length < 2) return "Ngoài KH năm";
+
+    const header = dataSheet[0].map(h => normalizeString(String(h || "")));
+    const idxTram = header.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
+    
+    if (idxTram === -1) return "Ngoài KH năm";
+
+    const normName = normalizeString(stationName);
+    const matchRow = dataSheet.slice(1).find(row => {
+      const rowStationName = normalizeString(String(row[idxTram] || ""));
+      return rowStationName === normName;
+    });
+
+    if (!matchRow) return "Ngoài KH năm";
+
+    return "Trong KH năm";
+  }, [dataSheet]);
+
   const stationNames = useMemo(() => {
-  const findInSheet = (sheet: SheetData) => {
-      if (sheet.length === 0) return null;
+    if (tbaSheet.length === 0) return [];
+
+    let headerIndex = 0;
+    // According to the user request, the station names in the DS TBA sheet (tbaSheet)
+    // are retrieved from Column C (0-indexed column 2). 
+    let indexTenTram = 2; // Default to Column C (index 2)
+    let indexDienLuc = 1; // Default to Column B (index 1) for Điện lực
+
+    // Search first 5 rows for headers to dynamically adjust if possible
+    for (let i = 0; i < Math.min(tbaSheet.length, 5); i++) {
+      const normalizedRow = tbaSheet[i].map(h => normalizeString(String(h || "")));
+      const idxDL = normalizedRow.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
+      const idxTram = normalizedRow.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba") || h.includes("tram bien ap"));
       
-      let headerIndex = -1;
-      let indexTenTram = -1;
-      let indexDienLuc = -1;
-
-      // Search first 5 rows for header
-      for (let i = 0; i < Math.min(sheet.length, 5); i++) {
-        const normalizedRow = sheet[i].map(h => normalizeString(h));
-        const idxTram = normalizedRow.findIndex(h => h.includes("ten tram") || h === "tram" || h.includes("ten tba"));
-        const idxDL = normalizedRow.findIndex(h => h.includes("dien luc") || h.includes("don vi"));
-        
-        if (idxTram !== -1) {
-          headerIndex = i;
-          indexTenTram = idxTram;
-          indexDienLuc = idxDL;
-          break;
-        }
+      if (idxDL !== -1) {
+        indexDienLuc = idxDL;
+        headerIndex = i;
       }
-
-      return { headerIndex, indexTenTram, indexDienLuc, sheet };
-    };
-
-    const thuVienInfo = findInSheet(thuVienSheet);
-    const dataInfo = findInSheet(dataSheet);
-
-    let info = null;
-    if (thuVienInfo && thuVienInfo.indexTenTram !== -1 && thuVienInfo.indexDienLuc !== -1) {
-      info = thuVienInfo;
-    } else if (dataInfo && dataInfo.indexTenTram !== -1 && dataInfo.indexDienLuc !== -1) {
-      info = dataInfo;
-    } else if (dataInfo && dataInfo.indexTenTram !== -1) {
-      info = dataInfo;
-    } else if (thuVienInfo && thuVienInfo.indexTenTram !== -1) {
-      info = thuVienInfo;
+      if (idxTram !== -1) {
+        indexTenTram = idxTram;
+        headerIndex = i;
+      }
     }
 
-    if (!info || info.indexTenTram === -1) return [];
+    // Force indexTenTram to Column C (index 2) as explicitly requested by the user if the sheet has it
+    const firstRow = tbaSheet[0] || [];
+    if (firstRow.length > 2) {
+      indexTenTram = 2;
+    }
 
-    let result = info.sheet.slice(info.headerIndex + 1);
-    if (dienLuc !== "all" && info.indexDienLuc !== -1) {
+    let result = tbaSheet.slice(headerIndex + 1);
+    if (dienLuc !== "all" && indexDienLuc !== -1) {
       const normalizedDienLuc = normalizeString(dienLuc);
       result = result.filter(row => {
-        const val = row[info.indexDienLuc];
-        return val && normalizeString(val) === normalizedDienLuc;
+        const val = row[indexDienLuc];
+        return val && normalizeString(String(val)) === normalizedDienLuc;
       });
     }
 
     return Array.from(
       new Set(
         result
-          .map(row => String(row[info.indexTenTram] || ""))
+          .map(row => String(row[indexTenTram] || ""))
           .filter(Boolean)
           .map(s => s.trim())
       )
     ).sort() as string[];
-  }, [thuVienSheet, dataSheet, dienLuc]);
+  }, [tbaSheet, dienLuc]);
 
   const [selectedStationTongHop, setSelectedStationTongHop] = useState("");
   const [selectedDienLucTongHop, setSelectedDienLucTongHop] = useState("all");
@@ -2741,7 +2755,19 @@ export default function App() {
                             aria-expanded={openTenTram}
                             className="w-full h-10 justify-between bg-white border-border text-[13px] font-normal"
                           >
-                            {tenTram ? tenTram : "Tìm và chọn tên trạm..."}
+                            {tenTram ? (
+                              <div className="flex items-center gap-2 text-left truncate max-w-[85%]">
+                                <span className="truncate">{tenTram}</span>
+                                <span className={cn(
+                                  "text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0",
+                                  getPlanStatus(tenTram) === "Trong KH năm"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                                )}>
+                                  {getPlanStatus(tenTram)}
+                                </span>
+                              </div>
+                            ) : "Tìm và chọn tên trạm..."}
                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         }
@@ -2756,25 +2782,38 @@ export default function App() {
                           <CommandList className="max-h-[300px]">
                             <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
                             <CommandGroup>
-                              {stationNames.map((name) => (
-                                <CommandItem
-                                  key={name}
-                                  value={name}
-                                  onSelect={() => {
-                                    setTenTram(name);
-                                    setOpenTenTram(false);
-                                  }}
-                                  className="text-[13px] cursor-pointer"
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      tenTram === name ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  {name}
-                                </CommandItem>
-                              ))}
+                              {stationNames.map((name) => {
+                                const planStatus = getPlanStatus(name);
+                                return (
+                                  <CommandItem
+                                    key={name}
+                                    value={name}
+                                    onSelect={() => {
+                                      setTenTram(name);
+                                      setOpenTenTram(false);
+                                    }}
+                                    className="text-[13px] cursor-pointer flex items-center justify-between"
+                                  >
+                                    <div className="flex items-center flex-1 min-w-0">
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4 shrink-0",
+                                          tenTram === name ? "opacity-100" : "opacity-0"
+                                        )}
+                                      />
+                                      <span className="truncate">{name}</span>
+                                    </div>
+                                    <span className={cn(
+                                      "text-[10px] px-1.5 py-0.5 rounded-full ml-2 font-medium shrink-0",
+                                      planStatus === "Trong KH năm"
+                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        : "bg-amber-50 text-amber-700 border border-amber-200"
+                                    )}>
+                                      {planStatus}
+                                    </span>
+                                  </CommandItem>
+                                );
+                              })}
                             </CommandGroup>
                           </CommandList>
                         </Command>
@@ -3083,7 +3122,19 @@ export default function App() {
                           role="combobox"
                           className="w-[180px] h-8 text-[12px] bg-white border-border justify-between"
                         >
-                          {filterTenTram === "all" ? "Tất cả các trạm" : filterTenTram}
+                          {filterTenTram === "all" ? "Tất cả các trạm" : (
+                            <div className="flex items-center gap-1.5 overflow-hidden text-left truncate max-w-[85%]">
+                              <span className="truncate">{filterTenTram}</span>
+                              <span className={cn(
+                                "text-[9px] px-1 py-0.5 rounded-full font-medium shrink-0",
+                                getPlanStatus(filterTenTram) === "Trong KH năm"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200"
+                              )}>
+                                {getPlanStatus(filterTenTram) === "Trong KH năm" ? "Trong KH" : "Ngoài KH"}
+                              </span>
+                            </div>
+                          )}
                           <Search className="ml-2 h-3 w-3 shrink-0 opacity-50" />
                         </Button>
                       }
@@ -3109,20 +3160,33 @@ export default function App() {
                               <Check className={cn("mr-2 h-3 w-3", filterTenTram === "all" ? "opacity-100" : "opacity-0")} />
                               Tất cả các trạm
                             </CommandItem>
-                            {stationNames.map((name) => (
-                              <CommandItem
-                                key={name}
-                                value={name}
-                                onSelect={(val) => {
-                                  setFilterTenTram(val);
-                                  setOpenFilterCapNhat(false);
-                                }}
-                                className="text-[12px] cursor-pointer"
-                              >
-                                <Check className={cn("mr-2 h-3 w-3", filterTenTram === name ? "opacity-100" : "opacity-0")} />
-                                {name}
-                              </CommandItem>
-                            ))}
+                            {stationNames.map((name) => {
+                              const planStatus = getPlanStatus(name);
+                              return (
+                                <CommandItem
+                                  key={name}
+                                  value={name}
+                                  onSelect={(val) => {
+                                    setFilterTenTram(val);
+                                    setOpenFilterCapNhat(false);
+                                  }}
+                                  className="text-[12px] cursor-pointer flex items-center justify-between"
+                                >
+                                  <div className="flex items-center flex-1 min-w-0">
+                                    <Check className={cn("mr-2 h-3 w-3 shrink-0", filterTenTram === name ? "opacity-100" : "opacity-0")} />
+                                    <span className="truncate">{name}</span>
+                                  </div>
+                                  <span className={cn(
+                                    "text-[9px] px-1 py-0.5 rounded-full ml-2 font-medium shrink-0",
+                                    planStatus === "Trong KH năm"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : "bg-amber-50 text-amber-700 border border-amber-200"
+                                  )}>
+                                    {planStatus === "Trong KH năm" ? "Trong KH" : "Ngoài KH"}
+                                  </span>
+                                </CommandItem>
+                              );
+                            })}
                           </CommandGroup>
                         </CommandList>
                       </Command>
