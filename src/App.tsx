@@ -3218,53 +3218,85 @@ export default function App() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredCapNhat.map((item, i) => (
-                        <TableRow key={i} className="hover:bg-blue-50/30 border-b border-border transition-colors text-[11px] sm:text-[12px]">
-                          <TableCell className="py-3 px-4 border-b border-border text-center">
-                             <Button 
-                               variant="ghost" 
-                               size="icon" 
-                               className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                               onClick={() => handleEditOpen(item)}
-                             >
-                               <Edit2 className="w-3.5 h-3.5" />
-                             </Button>
-                          </TableCell>
-                          {item.data.map((cell, j) => {
-                            const headerName = capNhatSheet[0]?.[j]?.toLowerCase() || "";
-                            const isLongText = headerName.includes("giải pháp") || 
-                                             headerName.includes("vướng mắc") || 
-                                             headerName.includes("đề xuất") ||
-                                             headerName.includes("nguyên nhân") ||
-                                             headerName.includes("kế hoạch") ||
-                                             headerName.includes("công việc");
-                            
-                            const isMediumText = headerName.includes("tên trạm") || 
-                                               headerName.includes("đơn vị") ||
-                                               headerName.includes("điện lực") ||
-                                               headerName.includes("tiến độ");
+                      filteredCapNhat.map((item, i) => {
+                        const headers = capNhatSheet[0] || [];
+                        const planColIdx = headers.findIndex(h => {
+                          const norm = normalizeString(String(h || ""));
+                          return norm === "ke hoach nam" || norm.includes("ke hoach nam") || norm.includes("kh nam") || norm === "ke hoach";
+                        });
 
-                            return (
-                              <TableCell key={j} className={cn(
-                                "py-3 px-4 border-b border-border",
-                                isLongText ? "min-w-[300px] max-w-[500px] whitespace-normal break-words leading-relaxed" : 
-                                isMediumText ? "min-w-[150px] whitespace-normal" : "whitespace-nowrap"
-                              )}>
-                                {j === 3 ? (
-                                  <span className={cn(
-                                    "px-2 py-1 rounded-md text-[11px] font-bold shadow-sm inline-block",
-                                    cell === "QLVH" ? "bg-blue-100 text-blue-700 border border-blue-200" : 
-                                    cell === "KD" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : 
-                                    "bg-slate-100 text-slate-700 border border-slate-200"
-                                  )}>
-                                    {cell}
-                                  </span>
-                                ) : cell}
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      ))
+                        let isNgoaiKh = false;
+                        if (planColIdx !== -1) {
+                          isNgoaiKh = String(item.data[planColIdx] || "").trim() === "Ngoài KH năm";
+                        } else {
+                          isNgoaiKh = item.data.some(cell => String(cell || "").trim() === "Ngoài KH năm");
+                        }
+
+                        return (
+                          <TableRow 
+                            key={i} 
+                            className={cn(
+                              "border-b transition-colors text-[11px] sm:text-[12px]",
+                              isNgoaiKh 
+                                ? "bg-red-50/70 hover:bg-red-100/60 text-red-600 border-rose-100 font-medium" 
+                                : "hover:bg-blue-50/30 border-border text-slate-700"
+                            )}
+                          >
+                            <TableCell className={cn(
+                              "py-3 px-4 border-b text-center",
+                              isNgoaiKh ? "border-rose-100" : "border-border"
+                            )}>
+                               <Button 
+                                 variant="ghost" 
+                                 size="icon" 
+                                 className={cn(
+                                   "h-7 w-7",
+                                   isNgoaiKh 
+                                     ? "text-red-600 hover:text-red-700 hover:bg-red-100" 
+                                     : "text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                 )}
+                                 onClick={() => handleEditOpen(item)}
+                               >
+                                 <Edit2 className="w-3.5 h-3.5" />
+                               </Button>
+                            </TableCell>
+                            {item.data.map((cell, j) => {
+                              const headerName = capNhatSheet[0]?.[j]?.toLowerCase() || "";
+                              const isLongText = headerName.includes("giải pháp") || 
+                                               headerName.includes("vướng mắc") || 
+                                               headerName.includes("đề xuất") ||
+                                               headerName.includes("nguyên nhân") ||
+                                               headerName.includes("kế hoạch") ||
+                                               headerName.includes("công việc");
+                              
+                              const isMediumText = headerName.includes("tên trạm") || 
+                                                 headerName.includes("đơn vị") ||
+                                                 headerName.includes("điện lực") ||
+                                                 headerName.includes("tiến độ");
+
+                              return (
+                                <TableCell key={j} className={cn(
+                                  "py-3 px-4 border-b",
+                                  isNgoaiKh ? "border-rose-100" : "border-border",
+                                  isLongText ? "min-w-[300px] max-w-[500px] whitespace-normal break-words leading-relaxed" : 
+                                  isMediumText ? "min-w-[150px] whitespace-normal" : "whitespace-nowrap"
+                                )}>
+                                  {j === 3 ? (
+                                    <span className={cn(
+                                      "px-2 py-1 rounded-md text-[11px] font-bold shadow-sm inline-block",
+                                      cell === "QLVH" ? "bg-blue-100 text-blue-700 border border-blue-200" : 
+                                      cell === "KD" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : 
+                                      "bg-slate-100 text-slate-700 border border-slate-200"
+                                    )}>
+                                      {cell}
+                                    </span>
+                                  ) : cell}
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </table>
@@ -5843,46 +5875,77 @@ export default function App() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      reportData.map((item, i) => (
-                        <TableRow key={i} className="hover:bg-blue-50/20 border-b border-slate-100 transition-colors text-[11px] sm:text-[12px]">
-                          <TableCell className="py-3 px-4 border-b border-r border-slate-100 text-center font-mono text-slate-400 bg-white">
-                            {i + 1}
-                          </TableCell>
-                          {item.data.map((cell, j) => {
-                            const headerName = capNhatSheet[0]?.[j]?.toLowerCase() || "";
-                            const isLongText = headerName.includes("giải pháp") || 
-                                             headerName.includes("vướng mắc") || 
-                                             headerName.includes("đề xuất") ||
-                                             headerName.includes("nguyên nhân") ||
-                                             headerName.includes("kế hoạch") ||
-                                             headerName.includes("công việc");
-                            
-                            const isMediumText = headerName.includes("tên trạm") || 
-                                               headerName.includes("đơn vị") ||
-                                               headerName.includes("điện lực") ||
-                                               headerName.includes("tiến độ");
+                      reportData.map((item, i) => {
+                        const headers = capNhatSheet[0] || [];
+                        const planColIdx = headers.findIndex(h => {
+                          const norm = normalizeString(String(h || ""));
+                          return norm === "ke hoach nam" || norm.includes("ke hoach nam") || norm.includes("kh nam") || norm === "ke hoach";
+                        });
 
-                            return (
-                              <TableCell key={j} className={cn(
-                                "py-3 px-4 border-b border-r border-slate-100 bg-white",
-                                isLongText ? "min-w-[300px] max-w-[500px] whitespace-normal break-words leading-relaxed" : 
-                                isMediumText ? "min-w-[150px] whitespace-normal font-medium text-slate-700" : "whitespace-nowrap"
-                              )}>
-                                {j === 3 ? (
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded text-[10px] font-bold shadow-sm inline-block",
-                                    cell === "QLVH" ? "bg-blue-100 text-blue-700 border border-blue-200" : 
-                                    cell === "KD" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : 
-                                    "bg-slate-100 text-slate-700 border border-slate-200"
-                                  )}>
-                                    {cell}
-                                  </span>
-                                ) : cell}
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      ))
+                        let isNgoaiKh = false;
+                        if (planColIdx !== -1) {
+                          isNgoaiKh = String(item.data[planColIdx] || "").trim() === "Ngoài KH năm";
+                        } else {
+                          isNgoaiKh = item.data.some(cell => String(cell || "").trim() === "Ngoài KH năm");
+                        }
+
+                        return (
+                          <TableRow 
+                            key={i} 
+                            className={cn(
+                              "border-b transition-colors text-[11px] sm:text-[12px]",
+                              isNgoaiKh 
+                                ? "bg-red-50/70 hover:bg-red-100/60 text-red-600 border-rose-100 font-medium" 
+                                : "hover:bg-blue-50/20 border-slate-100 text-slate-700"
+                            )}
+                          >
+                            <TableCell className={cn(
+                              "py-3 px-4 border-b border-r text-center font-mono",
+                              isNgoaiKh 
+                                ? "border-rose-100 bg-red-50/50 text-red-500" 
+                                : "border-slate-100 text-slate-400 bg-white"
+                            )}>
+                              {i + 1}
+                            </TableCell>
+                            {item.data.map((cell, j) => {
+                              const headerName = capNhatSheet[0]?.[j]?.toLowerCase() || "";
+                              const isLongText = headerName.includes("giải pháp") || 
+                                               headerName.includes("vướng mắc") || 
+                                               headerName.includes("đề xuất") ||
+                                               headerName.includes("nguyên nhân") ||
+                                               headerName.includes("kế hoạch") ||
+                                               headerName.includes("công việc");
+                              
+                              const isMediumText = headerName.includes("tên trạm") || 
+                                                 headerName.includes("đơn vị") ||
+                                                 headerName.includes("điện lực") ||
+                                                 headerName.includes("tiến độ");
+
+                              return (
+                                <TableCell key={j} className={cn(
+                                  "py-3 px-4 border-b border-r",
+                                  isNgoaiKh 
+                                    ? "border-rose-100 bg-red-50/20 text-red-600" 
+                                    : "border-slate-100 bg-white",
+                                  isLongText ? "min-w-[300px] max-w-[500px] whitespace-normal break-words leading-relaxed" : 
+                                  isMediumText ? "min-w-[150px] whitespace-normal font-medium text-slate-700" : "whitespace-nowrap"
+                                )}>
+                                  {j === 3 ? (
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded text-[10px] font-bold shadow-sm inline-block",
+                                      cell === "QLVH" ? "bg-blue-100 text-blue-700 border border-blue-200" : 
+                                      cell === "KD" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : 
+                                      "bg-slate-100 text-slate-700 border border-slate-200"
+                                    )}>
+                                      {cell}
+                                    </span>
+                                  ) : cell}
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </table>
