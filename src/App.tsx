@@ -169,6 +169,7 @@ export default function App() {
   const [luuSheet, setLuuSheet] = useState<SheetData>([]);
   const [lkCdaSheet, setLkCdaSheet] = useState<SheetData>([]);
   const [tbaSheet, setTbaSheet] = useState<SheetData>([]);
+  const [tbaRealSheet, setTbaRealSheet] = useState<SheetData>([]);
   const [mangTaiSheet, setMangTaiSheet] = useState<SheetData>([]);
   const [chamDiemSheet, setChamDiemSheet] = useState<SheetData>([]);
   const [selectedCDMonth, setSelectedCDMonth] = useState<string>("");
@@ -464,11 +465,11 @@ export default function App() {
   }, [thuVienSheet]);
 
   const filteredTbaList = useMemo(() => {
-    const listWithIndex = tbaSheet.map((row, idx) => ({ row, idx }));
+    const listWithIndex = tbaRealSheet.map((row, idx) => ({ row, idx }));
     let list = listWithIndex.slice(1);
     
-    // Find unit column in tbaSheet automatically
-    const header = tbaSheet[0] || [];
+    // Find unit column in tbaRealSheet automatically
+    const header = tbaRealSheet[0] || [];
     const idxDL = header.findIndex(h => {
       const nh = normalizeString(String(h || ""));
       return nh.includes("dien luc") || nh.includes("don vi");
@@ -478,7 +479,7 @@ export default function App() {
       list = list.filter(item => String(item.row[idxDL] || "").trim() === selectedTbaUnit);
     }
     return list;
-  }, [tbaSheet, selectedTbaUnit]);
+  }, [tbaRealSheet, selectedTbaUnit]);
 
   const filteredMangTaiHistory = useMemo(() => {
     if (mangTaiSheet.length < 2) return [];
@@ -524,14 +525,14 @@ export default function App() {
   }, [mangTaiSheet, selectedTbaUnit, filterMangTaiWeek, filterMangTaiOp, filterMangTaiValue]);
 
   const tbaSummary = useMemo(() => {
-    if (tbaSheet.length < 2 || mangTaiSheet.length < 2) return [];
+    if (tbaRealSheet.length < 2 || mangTaiSheet.length < 2) return [];
 
     const weekToFilter = (filterMangTaiWeek === "all" ? tbaTuanBaoCao : filterMangTaiWeek).trim();
     
-    // Get all stations from tbaSheet organized by unit
+    // Get all stations from tbaRealSheet organized by unit
     const unitsData: Record<string, { total: number, updated: number, missing: string[], originalUnitName: string }> = {};
     
-    const tbaHeader = tbaSheet[0] || [];
+    const tbaHeader = tbaRealSheet[0] || [];
     let idxDL_Tba = tbaHeader.findIndex(h => {
       const nh = normalizeString(String(h || ""));
       return nh.includes("dien luc") || nh.includes("don vi") || nh === "dl";
@@ -548,7 +549,7 @@ export default function App() {
 
     if (idxDL_Tba === -1 || idxTram_Tba === -1) return [];
 
-    tbaSheet.slice(1).forEach(row => {
+    tbaRealSheet.slice(1).forEach(row => {
       const unit = String(row[idxDL_Tba] || "").trim();
       const station = String(row[idxTram_Tba] || "").trim();
       if (!unit || !station) return;
@@ -624,7 +625,7 @@ export default function App() {
       }))
       .filter(item => item.status !== "Đủ")
       .sort((a, b) => a.unit.localeCompare(b.unit, 'vi'));
-  }, [tbaSheet, mangTaiSheet, filterMangTaiWeek, tbaTuanBaoCao]);
+  }, [tbaRealSheet, mangTaiSheet, filterMangTaiWeek, tbaTuanBaoCao]);
 
 
   const historyWeeks = useMemo(() => {
@@ -773,7 +774,7 @@ export default function App() {
     try {
       // Add timestamp to bypass browser cache
       const ts = Date.now();
-      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes, tbaRes, mangTaiRes, chamDiemRes] = await Promise.all([
+      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes, tbaRes, tbaRealRes, mangTaiRes, chamDiemRes] = await Promise.all([
         fetch(`/api/sheets/data?t=${ts}`),
         fetch(`/api/sheets/cap-nhat?t=${ts}`),
         fetch(`/api/sheets/thu-vien?t=${ts}`),
@@ -781,11 +782,12 @@ export default function App() {
         fetch(`/api/sheets/luu?t=${ts}`),
         fetch(`/api/sheets/lk-cda?t=${ts}`),
         fetch(`/api/sheets/tba?t=${ts}`),
+        fetch(`/api/sheets/tba-real?t=${ts}`),
         fetch(`/api/sheets/mang-tai?t=${ts}`),
         fetch(`/api/sheets/cham-diem?t=${ts}`)
       ]);
 
-      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok || !tbaRes.ok || !mangTaiRes.ok || !chamDiemRes.ok) {
+      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok || !tbaRes.ok || !tbaRealRes.ok || !mangTaiRes.ok || !chamDiemRes.ok) {
         throw new Error("Failed to fetch data from sheets");
       }
 
@@ -796,6 +798,7 @@ export default function App() {
       const luu = await luuRes.json();
       const lkCda = await lkCdaRes.json();
       const tba = await tbaRes.json();
+      const tbaReal = await tbaRealRes.json();
       const mangTai = await mangTaiRes.json();
       const chamDiem = await chamDiemRes.json();
 
@@ -807,6 +810,7 @@ export default function App() {
         luuRows: luu.length,
         lkCdaRows: lkCda.length,
         tbaRows: tba.length,
+        tbaRealRows: tbaReal.length,
         mangTaiRows: mangTai.length,
         chamDiemRows: chamDiem.length
       });
@@ -818,6 +822,7 @@ export default function App() {
       setLuuSheet(luu);
       setLkCdaSheet(lkCda);
       setTbaSheet(tba);
+      setTbaRealSheet(tbaReal);
       setMangTaiSheet(mangTai);
       setChamDiemSheet(chamDiem);
       setLastSync(new Date());
@@ -5126,7 +5131,7 @@ export default function App() {
                     // Find unit for selected trạm if available
                     let unitVal = "";
                     if (selectedTbaRow) {
-                      const header = tbaSheet[0] || [];
+                      const header = tbaRealSheet[0] || [];
                       const idxDL = header.findIndex(h => {
                         const nh = normalizeString(String(h || ""));
                         return nh.includes("dien luc") || nh.includes("don vi");
@@ -5194,21 +5199,21 @@ export default function App() {
                           variant="outline"
                           className="w-full justify-between bg-white text-[13px] font-normal"
                         >
-                          {selectedTbaRow ? `${selectedTbaRow[1]} - ${selectedTbaRow[2]}` : "Chọn trạm biến áp..."}
+                          {selectedTbaRow ? `${selectedTbaRow[1]}${selectedTbaRow[2] ? ` (Sđm: ${selectedTbaRow[2]})` : ""}` : "Chọn trạm biến áp..."}
                           <Search className="ml-2 h-4 w-4 opacity-50" />
                         </Button>
                       }
                     />
                     <PopoverContent className="w-[300px] p-0 bg-white shadow-xl z-50 overflow-hidden" align="start">
                       <Command>
-                        <CommandInput placeholder="Tìm mã trạm hoặc tên trạm..." className="h-9" />
+                        <CommandInput placeholder="Tìm tên trạm, sđm..." className="h-9" />
                         <CommandList className="max-h-[300px]">
                           <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
                           <CommandGroup>
                             {filteredTbaList.map((item, idx) => (
                               <CommandItem
                                 key={idx}
-                                value={`${item.row[1]} ${item.row[2]}`}
+                                value={`${item.row[1]} ${item.row[2] || ""}`}
                                 onSelect={() => {
                                   setSelectedTbaRow(item.row);
                                   setOpenTbaSelect(false);
@@ -5216,8 +5221,10 @@ export default function App() {
                                 className="text-[12px] cursor-pointer"
                               >
                                 <div className="flex flex-col">
-                                  <span className="font-bold">{item.row[2]}</span>
-                                  <span className="text-[10px] text-slate-500">{item.row[1]} - {item.row[3]}</span>
+                                  <span className="font-bold text-slate-700">{item.row[1]}</span>
+                                  <span className="text-[10px] text-slate-500">
+                                    Sđm: {item.row[2] || "N/A"}{item.row[3] ? ` - Ngày đóng điện: ${item.row[3]}` : ""}
+                                  </span>
                                 </div>
                               </CommandItem>
                             ))}
@@ -5578,7 +5585,7 @@ export default function App() {
                 <thead className="sticky top-0 z-10 shadow-sm">
                   <tr className="bg-slate-100">
                     <th className="w-12 text-center font-bold text-[#3c4043] py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">STT</th>
-                    {tbaSheet[0]?.map((h, i) => (
+                    {tbaRealSheet[0]?.map((h, i) => (
                       <th key={i} className="font-bold text-[#3c4043] whitespace-nowrap py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">{h}</th>
                     ))}
                     <th className="w-20 text-center font-bold text-[#3c4043] py-3 px-4 border-b border-r text-[13px] bg-slate-100 sticky top-0">Thao tác</th>
@@ -5587,7 +5594,7 @@ export default function App() {
                 <tbody>
                   {filteredTbaList.length === 0 ? (
                     <tr>
-                      <td colSpan={(tbaSheet[0]?.length || 0) + 2} className="h-40 text-center text-slate-400">Không có dữ liệu trạm</td>
+                      <td colSpan={(tbaRealSheet[0]?.length || 0) + 2} className="h-40 text-center text-slate-400">Không có dữ liệu trạm</td>
                     </tr>
                   ) : (
                     [...filteredTbaList].reverse().map((item, idx) => (

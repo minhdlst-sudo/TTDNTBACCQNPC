@@ -213,6 +213,22 @@ app.get("/api/sheets/tba", async (req, res) => {
   }
 });
 
+app.get("/api/sheets/tba-real", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "'TBA'!A:AZ",
+    });
+    const values = response.data.values || [];
+    console.log(`Fetched ${values.length} rows from 'TBA' sheet at ${new Date().toISOString()}`);
+    res.json(values);
+  } catch (error: any) {
+    console.error("Error fetching 'TBA' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/sheets/tba", async (req, res) => {
   try {
     const sheets = getSheetsClient();
@@ -290,6 +306,27 @@ app.get("/api/sheets/cham-diem", async (req, res) => {
     res.json(values);
   } catch (error: any) {
     console.error("Error fetching 'Cham diem' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/debug-sheets", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const sheetName = (req.query.sheet as string) || "";
+    if (sheetName) {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${sheetName}'!A1:G15`,
+      });
+      return res.json(response.data.values || []);
+    }
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId: SPREADSHEET_ID,
+    });
+    const sheetTitles = response.data.sheets?.map(s => s.properties?.title) || [];
+    res.json(sheetTitles);
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
