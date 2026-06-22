@@ -388,7 +388,7 @@ export default function App() {
     if (!editingTba) return;
     setSubmittingTba(true);
     try {
-      const res = await fetch("/api/sheets/tba", {
+      const res = await fetch("/api/sheets/tba-real", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -420,7 +420,7 @@ export default function App() {
     }
     setSubmittingTba(true);
     try {
-      const res = await fetch("/api/sheets/tba", {
+      const res = await fetch("/api/sheets/tba-real", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

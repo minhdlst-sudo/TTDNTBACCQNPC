@@ -229,6 +229,55 @@ app.get("/api/sheets/tba-real", async (req, res) => {
   }
 });
 
+app.post("/api/sheets/tba-real", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const { dienLuc, tenTram, sdm, ngayDongDien } = req.body;
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "'TBA'!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[dienLuc, tenTram, sdm, ngayDongDien]],
+      },
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error appending to 'TBA' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/sheets/tba-real", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const { rowIndex, dienLuc, tenTram, sdm, ngayDongDien } = req.body;
+
+    if (rowIndex === undefined || rowIndex < 1) {
+      return res.status(400).json({ error: "Invalid row index" });
+    }
+
+    const rowNumber = rowIndex + 1;
+    const range = `'TBA'!A${rowNumber}:D${rowNumber}`;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: range,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[dienLuc, tenTram, sdm, ngayDongDien]],
+      },
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error updating 'TBA' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/sheets/tba", async (req, res) => {
   try {
     const sheets = getSheetsClient();
@@ -310,26 +359,7 @@ app.get("/api/sheets/cham-diem", async (req, res) => {
   }
 });
 
-app.get("/api/debug-sheets", async (req, res) => {
-  try {
-    const sheets = getSheetsClient();
-    const sheetName = (req.query.sheet as string) || "";
-    if (sheetName) {
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `'${sheetName}'!A1:G15`,
-      });
-      return res.json(response.data.values || []);
-    }
-    const response = await sheets.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
-    });
-    const sheetTitles = response.data.sheets?.map(s => s.properties?.title) || [];
-    res.json(sheetTitles);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// Debug endpoint removed for production readiness
 
 app.post("/api/sheets/mang-tai", async (req, res) => {
   try {
