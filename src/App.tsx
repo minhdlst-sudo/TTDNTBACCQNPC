@@ -1126,6 +1126,7 @@ export default function App() {
   const [selectedStationTongHop, setSelectedStationTongHop] = useState("");
   const [selectedDienLucTongHop, setSelectedDienLucTongHop] = useState("all");
   const [querySortBy, setQuerySortBy] = useState<"ttdn" | "att">("ttdn");
+  const [filterTtdnRange, setFilterTtdnRange] = useState<string>("all");
   const [openSearchTongHop, setOpenSearchTongHop] = useState(false);
   const [openDienLucTongHop, setOpenDienLucTongHop] = useState(false);
 
@@ -1308,6 +1309,28 @@ export default function App() {
       result = result.filter(item => normalizeString(item.dienLuc) === normDL);
     }
 
+    // Filter by TTĐN LK 2026 % range if not "all"
+    if (filterTtdnRange !== "all") {
+      result = result.filter(item => {
+        const val = parseFloat(String(item.ttdnLk2026).replace(/,/g, '.').replace(/%/g, '').trim());
+        const cleanedVal = isNaN(val) ? 0 : val;
+        switch (filterTtdnRange) {
+          case "le4": // <= 4
+            return cleanedVal <= 4;
+          case "gt4le5": // 4 < val <= 5
+            return cleanedVal > 4 && cleanedVal <= 5;
+          case "gt5le6": // 5 < val <= 6
+            return cleanedVal > 5 && cleanedVal <= 6;
+          case "gt6le7": // 6 < val <= 7
+            return cleanedVal > 6 && cleanedVal <= 7;
+          case "gt7": // > 7
+            return cleanedVal > 7;
+          default:
+            return true;
+        }
+      });
+    }
+
     // Sort by selected criteria descending
     result.sort((a, b) => {
       let valA, valB;
@@ -1322,7 +1345,7 @@ export default function App() {
     });
 
     return result;
-  }, [tongHopSheet, selectedDienLucTongHop, querySortBy]);
+  }, [tongHopSheet, selectedDienLucTongHop, querySortBy, filterTtdnRange]);
 
   const attTuyetDoiData = useMemo(() => {
     if (thuVienSheet.length < 2) return { data: [], labels: { ae: "Đơn vị", af: "Att LK", ag: "Tỷ trọng (%)" } };
@@ -3768,17 +3791,36 @@ export default function App() {
                 </Button>
               </div>
               
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Ưu tiên sắp xếp theo:</span>
-                <Select value={querySortBy} onValueChange={(val: any) => setQuerySortBy(val)}>
-                  <SelectTrigger className="h-8 w-[170px] text-[12px] bg-white border-slate-200">
-                    <SelectValue placeholder="Tiêu chí" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white">
-                    <SelectItem value="ttdn">TTĐN LK 2026 %</SelectItem>
-                    <SelectItem value="att">Att LK 2026 kWh</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Lọc TTĐN LK 2026 %:</span>
+                  <Select value={filterTtdnRange} onValueChange={setFilterTtdnRange}>
+                    <SelectTrigger className="h-8 w-[200px] text-[12px] bg-white border-slate-200">
+                      <SelectValue placeholder="Tất cả mức" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="all">Tất cả mức</SelectItem>
+                      <SelectItem value="le4">TTĐN LK 2026 % ≤ 4</SelectItem>
+                      <SelectItem value="gt4le5">4 &lt; TTĐN LK 2026 % ≤ 5</SelectItem>
+                      <SelectItem value="gt5le6">5 &lt; TTĐN LK 2026 % ≤ 6</SelectItem>
+                      <SelectItem value="gt6le7">6 &lt; TTĐN LK 2026 % ≤ 7</SelectItem>
+                      <SelectItem value="gt7">TTĐN LK 2026 % &gt; 7</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Ưu tiên sắp xếp theo:</span>
+                  <Select value={querySortBy} onValueChange={(val: any) => setQuerySortBy(val)}>
+                    <SelectTrigger className="h-8 w-[170px] text-[12px] bg-white border-slate-200">
+                      <SelectValue placeholder="Tiêu chí" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="ttdn">TTĐN LK 2026 %</SelectItem>
+                      <SelectItem value="att">Att LK 2026 kWh</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-auto relative max-h-[600px]">
