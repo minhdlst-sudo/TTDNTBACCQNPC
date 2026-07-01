@@ -28,7 +28,8 @@ import {
   Download,
   Info,
   HelpCircle,
-  List
+  List,
+  Lock
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { format, getWeek } from "date-fns";
@@ -172,6 +173,14 @@ export default function App() {
   const [tbaRealSheet, setTbaRealSheet] = useState<SheetData>([]);
   const [mangTaiSheet, setMangTaiSheet] = useState<SheetData>([]);
   const [chamDiemSheet, setChamDiemSheet] = useState<SheetData>([]);
+  const [bienDongSheet, setBienDongSheet] = useState<SheetData>([]);
+  const [selectedBDUnit, setSelectedBDUnit] = useState<string>("all");
+  const [selectedBDStation, setSelectedBDStation] = useState<string>("all");
+  const [selectedBDMonth, setSelectedBDMonth] = useState<string>("all");
+  const [selectedBDYear, setSelectedBDYear] = useState<string>("all");
+  const [bdGiaiTrinh, setBdGiaiTrinh] = useState<string>("");
+  const [openBdtbaSelect, setOpenBdtbaSelect] = useState<boolean>(false);
+  const [submittingBD, setSubmittingBD] = useState<boolean>(false);
   const [selectedCDMonth, setSelectedCDMonth] = useState<string>("");
   const [selectedCDYear, setSelectedCDYear] = useState<string>("");
   const [selectedCDGroup, setSelectedCDGroup] = useState<string>("all");
@@ -286,7 +295,7 @@ export default function App() {
     return `Tháng ${prevMonth}`;
   });
   const [selectedUnitCapDa, setSelectedUnitCapDa] = useState<string>("TOÀN CÔNG TY");
-  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da" | "tba-xdm" | "bao-cao">("cap-nhat");
+  const [activeTab, setActiveTab] = useState<"cap-nhat" | "tong-hop" | "thong-ke" | "tong-hop-moi" | "cap-da" | "tba-xdm" | "bao-cao" | "bien-dong">("cap-nhat");
   const [selectedSummaryUnit, setSelectedSummaryUnit] = useState<{ unit: string, total: number, missing: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -446,6 +455,271 @@ export default function App() {
       toast.error("Lỗi kết nối");
     } finally {
       setSubmittingTba(false);
+    }
+  };
+
+  const bienDongOptions = useMemo(() => {
+    if (bienDongSheet.length < 2) {
+      return { units: [], stations: [], months: [], years: [], colDL: 0, colTram: 2, colThang: 8, colNam: 6 };
+    }
+    const dataRows = bienDongSheet.slice(1);
+    
+    const header = bienDongSheet[0] || [];
+    const idxDL = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("don vi") || nh.includes("dien luc") || nh === "dl";
+    });
+    const idxTram = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("ten tram");
+    });
+    const idxThang = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh === "thang" || nh === "thang lk";
+    });
+    const idxNam = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh === "nam";
+    });
+
+    const colDL = idxDL !== -1 ? idxDL : 0;
+    const colTram = idxTram !== -1 ? idxTram : 2;
+    const colThang = idxThang !== -1 ? idxThang : 8;
+    const colNam = idxNam !== -1 ? idxNam : 6;
+
+    const units = Array.from(new Set(dataRows.map(row => String(row[colDL] || "").trim()).filter(Boolean))).sort();
+    const years = Array.from(new Set(dataRows.map(row => String(row[colNam] || "").trim()).filter(Boolean))).sort();
+    const months = Array.from(new Set(dataRows.map(row => String(row[colThang] || "").trim()).filter(Boolean))).sort((a, b) => {
+      const numA = parseInt(a);
+      const numB = parseInt(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+
+    const stations = Array.from(new Set(
+      dataRows
+        .filter(row => {
+          const matchDL = !selectedBDUnit || selectedBDUnit === "all" || String(row[colDL] || "").trim() === selectedBDUnit;
+          const matchMonth = !selectedBDMonth || selectedBDMonth === "all" || String(row[colThang] || "").trim() === selectedBDMonth;
+          const matchYear = !selectedBDYear || selectedBDYear === "all" || String(row[colNam] || "").trim() === selectedBDYear;
+          return matchDL && matchMonth && matchYear;
+        })
+        .map(row => String(row[colTram] || "").trim())
+        .filter(Boolean)
+    )).sort();
+
+    return { units, stations, months, years, colDL, colTram, colThang, colNam };
+  }, [bienDongSheet, selectedBDUnit, selectedBDMonth, selectedBDYear]);
+
+  const filteredBienDongRows = useMemo(() => {
+    if (bienDongSheet.length < 2) return [];
+    const { colDL, colTram, colThang, colNam } = bienDongOptions;
+    return bienDongSheet.slice(1).filter(row => {
+      const matchDL = !selectedBDUnit || selectedBDUnit === "all" || String(row[colDL] || "").trim() === selectedBDUnit;
+      const matchTram = !selectedBDStation || selectedBDStation === "all" || String(row[colTram] || "").trim() === selectedBDStation;
+      const matchMonth = !selectedBDMonth || selectedBDMonth === "all" || String(row[colThang] || "").trim() === selectedBDMonth;
+      const matchYear = !selectedBDYear || selectedBDYear === "all" || String(row[colNam] || "").trim() === selectedBDYear;
+      return matchDL && matchTram && matchMonth && matchYear;
+    });
+  }, [bienDongSheet, selectedBDUnit, selectedBDStation, selectedBDMonth, selectedBDYear, bienDongOptions]);
+
+  const isBDRowLocked = useMemo(() => {
+    if (bienDongSheet.length < 2) return false;
+    if (
+      !selectedBDUnit || selectedBDUnit === "all" ||
+      !selectedBDStation || selectedBDStation === "all" ||
+      !selectedBDMonth || selectedBDMonth === "all" ||
+      !selectedBDYear || selectedBDYear === "all"
+    ) {
+      return false;
+    }
+    const { colDL, colTram, colThang, colNam } = bienDongOptions;
+    const header = bienDongSheet[0] || [];
+    const idxGiaiTrinh = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("giai trinh");
+    });
+    const colGiaiTrinh = idxGiaiTrinh !== -1 ? idxGiaiTrinh : 9;
+
+    const searchDL = normalizeString(selectedBDUnit);
+    const searchTram = normalizeString(selectedBDStation);
+    const searchThang = selectedBDMonth.trim();
+    const searchNam = selectedBDYear.trim();
+
+    const matchingRow = bienDongSheet.slice(1).find(row => {
+      const rDL = normalizeString(String(row[colDL] || ""));
+      const rTram = normalizeString(String(row[colTram] || ""));
+      const rThang = String(row[colThang] || "").trim();
+      const rNam = String(row[colNam] || "").trim();
+
+      const rMa = normalizeString(String(row[1] || ""));
+      const rTen = normalizeString(String(row[2] || ""));
+
+      const dlMatch = rDL === searchDL || rDL.includes(searchDL) || searchDL.includes(rDL);
+      const tramMatch = rTram === searchTram || rMa === searchTram || rTen === searchTram;
+      const mMatch = rThang === searchThang;
+      const yMatch = rNam === searchNam;
+
+      return dlMatch && tramMatch && mMatch && yMatch;
+    });
+
+    if (matchingRow) {
+      return String(matchingRow[colGiaiTrinh] || "").trim().length > 0;
+    }
+    return false;
+  }, [selectedBDUnit, selectedBDStation, selectedBDMonth, selectedBDYear, bienDongSheet, bienDongOptions]);
+
+  const bienDongSummary = useMemo(() => {
+    if (bienDongSheet.length < 2) return { list: [], total: 0, updated: 0, remaining: 0 };
+    const { colDL, colThang, colNam } = bienDongOptions;
+    const header = bienDongSheet[0] || [];
+    const idxGiaiTrinh = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("giai trinh");
+    });
+    const colGiaiTrinh = idxGiaiTrinh !== -1 ? idxGiaiTrinh : 9;
+
+    const filteredRows = bienDongSheet.slice(1).filter(row => {
+      const matchDL = !selectedBDUnit || selectedBDUnit === "all" || String(row[colDL] || "").trim() === selectedBDUnit;
+      const matchMonth = !selectedBDMonth || selectedBDMonth === "all" || String(row[colThang] || "").trim() === selectedBDMonth;
+      const matchYear = !selectedBDYear || selectedBDYear === "all" || String(row[colNam] || "").trim() === selectedBDYear;
+      return matchDL && matchMonth && matchYear;
+    });
+
+    const summaryMap: Record<string, { unit: string; total: number; updated: number; remaining: number }> = {};
+    let total = 0;
+    let updated = 0;
+    let remaining = 0;
+
+    filteredRows.forEach(row => {
+      const unit = String(row[colDL] || "").trim() || "Chưa xác định";
+      const hasGiaiTrinh = String(row[colGiaiTrinh] || "").trim().length > 0;
+
+      if (!summaryMap[unit]) {
+        summaryMap[unit] = { unit, total: 0, updated: 0, remaining: 0 };
+      }
+      summaryMap[unit].total += 1;
+      total += 1;
+      if (hasGiaiTrinh) {
+        summaryMap[unit].updated += 1;
+        updated += 1;
+      } else {
+        summaryMap[unit].remaining += 1;
+        remaining += 1;
+      }
+    });
+
+    const list = Object.values(summaryMap).sort((a, b) => b.total - a.total);
+    return { list, total, updated, remaining };
+  }, [bienDongSheet, selectedBDUnit, selectedBDMonth, selectedBDYear, bienDongOptions]);
+
+  // Auto-load existing explanation when selections change
+  useEffect(() => {
+    if (bienDongSheet.length < 2) return;
+    if (!selectedBDUnit || selectedBDUnit === "all" || 
+        !selectedBDStation || selectedBDStation === "all" || 
+        !selectedBDMonth || selectedBDMonth === "all" || 
+        !selectedBDYear || selectedBDYear === "all") {
+      setBdGiaiTrinh("");
+      return;
+    }
+
+    const { colDL, colTram, colThang, colNam } = bienDongOptions;
+    const header = bienDongSheet[0] || [];
+    const idxGiaiTrinh = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("giai trinh");
+    });
+    const colGiaiTrinh = idxGiaiTrinh !== -1 ? idxGiaiTrinh : 9;
+
+    const searchDL = normalizeString(selectedBDUnit);
+    const searchTram = normalizeString(selectedBDStation);
+    const searchThang = selectedBDMonth.trim();
+    const searchNam = selectedBDYear.trim();
+
+    const matchingRow = bienDongSheet.slice(1).find(row => {
+      const rDL = normalizeString(String(row[colDL] || ""));
+      const rTram = normalizeString(String(row[colTram] || ""));
+      const rThang = String(row[colThang] || "").trim();
+      const rNam = String(row[colNam] || "").trim();
+
+      const rMa = normalizeString(String(row[1] || ""));
+      const rTen = normalizeString(String(row[2] || ""));
+
+      const dlMatch = rDL === searchDL || rDL.includes(searchDL) || searchDL.includes(rDL);
+      const tramMatch = rTram === searchTram || rMa === searchTram || rTen === searchTram;
+      const mMatch = rThang === searchThang;
+      const yMatch = rNam === searchNam;
+
+      return dlMatch && tramMatch && mMatch && yMatch;
+    });
+
+    if (matchingRow) {
+      setBdGiaiTrinh(String(matchingRow[colGiaiTrinh] || "").trim());
+    } else {
+      setBdGiaiTrinh("");
+    }
+  }, [selectedBDUnit, selectedBDStation, selectedBDMonth, selectedBDYear, bienDongSheet, bienDongOptions]);
+
+  const handleSelectBDRow = (row: any[]) => {
+    const { colDL, colTram, colThang, colNam } = bienDongOptions;
+    const header = bienDongSheet[0] || [];
+    const idxGiaiTrinh = header.findIndex(h => {
+      const nh = normalizeString(String(h || ""));
+      return nh.includes("giai trinh");
+    });
+    const colGiaiTrinh = idxGiaiTrinh !== -1 ? idxGiaiTrinh : 9;
+
+    setSelectedBDUnit(String(row[colDL] || "").trim());
+    setSelectedBDStation(String(row[colTram] || "").trim());
+    setSelectedBDMonth(String(row[colThang] || "").trim());
+    setSelectedBDYear(String(row[colNam] || "").trim());
+    setBdGiaiTrinh(String(row[colGiaiTrinh] || "").trim());
+  };
+
+  const handleUpdateBD = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedBDUnit || selectedBDUnit === "all" || 
+        !selectedBDStation || selectedBDStation === "all" || 
+        !selectedBDMonth || selectedBDMonth === "all" || 
+        !selectedBDYear || selectedBDYear === "all") {
+      toast.error("Vui lòng chọn đầy đủ Đơn vị, Tên trạm, Tháng, Năm để cập nhật");
+      return;
+    }
+
+    if (isBDRowLocked) {
+      toast.error("Dòng này đã có nội dung giải trình và đã bị khóa, không thể chỉnh sửa.");
+      return;
+    }
+
+    setSubmittingBD(true);
+    try {
+      const res = await fetch("/api/sheets/bien-dong", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dienLuc: selectedBDUnit,
+          tenTram: selectedBDStation,
+          thang: selectedBDMonth,
+          nam: selectedBDYear,
+          giaiTrinh: bdGiaiTrinh
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to update bien dong");
+      }
+
+      toast.success("Cập nhật nội dung giải trình thành công!");
+      await fetchData();
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Lỗi cập nhật giải trình", {
+        description: err.message
+      });
+    } finally {
+      setSubmittingBD(false);
     }
   };
 
@@ -774,7 +1048,7 @@ export default function App() {
     try {
       // Add timestamp to bypass browser cache
       const ts = Date.now();
-      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes, tbaRes, tbaRealRes, mangTaiRes, chamDiemRes] = await Promise.all([
+      const [dataRes, capNhatRes, thuVienRes, tongHopRes, luuRes, lkCdaRes, tbaRes, tbaRealRes, mangTaiRes, chamDiemRes, bienDongRes] = await Promise.all([
         fetch(`/api/sheets/data?t=${ts}`),
         fetch(`/api/sheets/cap-nhat?t=${ts}`),
         fetch(`/api/sheets/thu-vien?t=${ts}`),
@@ -784,10 +1058,11 @@ export default function App() {
         fetch(`/api/sheets/tba?t=${ts}`),
         fetch(`/api/sheets/tba-real?t=${ts}`),
         fetch(`/api/sheets/mang-tai?t=${ts}`),
-        fetch(`/api/sheets/cham-diem?t=${ts}`)
+        fetch(`/api/sheets/cham-diem?t=${ts}`),
+        fetch(`/api/sheets/bien-dong?t=${ts}`)
       ]);
 
-      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok || !tbaRes.ok || !tbaRealRes.ok || !mangTaiRes.ok || !chamDiemRes.ok) {
+      if (!dataRes.ok || !capNhatRes.ok || !thuVienRes.ok || !tongHopRes.ok || !luuRes.ok || !lkCdaRes.ok || !tbaRes.ok || !tbaRealRes.ok || !mangTaiRes.ok || !chamDiemRes.ok || !bienDongRes.ok) {
         throw new Error("Failed to fetch data from sheets");
       }
 
@@ -801,6 +1076,7 @@ export default function App() {
       const tbaReal = await tbaRealRes.json();
       const mangTai = await mangTaiRes.json();
       const chamDiem = await chamDiemRes.json();
+      const bienDong = await bienDongRes.json();
 
       console.log("Data fetched:", { 
         dataRows: data.length, 
@@ -812,7 +1088,8 @@ export default function App() {
         tbaRows: tba.length,
         tbaRealRows: tbaReal.length,
         mangTaiRows: mangTai.length,
-        chamDiemRows: chamDiem.length
+        chamDiemRows: chamDiem.length,
+        bienDongRows: bienDong.length
       });
 
       setDataSheet(data);
@@ -825,6 +1102,7 @@ export default function App() {
       setTbaRealSheet(tbaReal);
       setMangTaiSheet(mangTai);
       setChamDiemSheet(chamDiem);
+      setBienDongSheet(bienDong);
       setLastSync(new Date());
       
       if (ts) {
@@ -2646,6 +2924,15 @@ export default function App() {
               )}
             >
               Cập nhật
+            </button>
+            <button 
+              onClick={() => setActiveTab("bien-dong")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all whitespace-nowrap",
+                activeTab === "bien-dong" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Biến động
             </button>
             <button 
               onClick={() => setActiveTab("bao-cao")}
@@ -5735,6 +6022,441 @@ export default function App() {
               </DialogContent>
             </Dialog>
         </Card>
+      </section>
+    ) : activeTab === "bien-dong" ? (
+      <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full bg-slate-50 animate-fadeIn">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">Biến động tổn thất điện năng (TTĐN%)</h2>
+            <p className="text-xs text-slate-500 mt-1">Theo dõi danh sách các trạm có TTĐN% biến động và cập nhật giải trình chi tiết</p>
+          </div>
+        </div>
+
+        {/* Bảng tổng hợp & Đồ thị trực quan */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Summary Cards and Table */}
+          <Card className="xl:col-span-2 shadow-sm border border-slate-100 bg-white flex flex-col overflow-hidden">
+            <CardHeader className="border-b pb-4 bg-slate-50/50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                    <TableIcon className="w-4 h-4 text-emerald-600" />
+                    Tổng hợp tiến độ giải trình theo đơn vị
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-1 text-slate-500">
+                    Số liệu tổng hợp dựa trên bộ lọc Tháng, Năm hiện tại
+                  </CardDescription>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] text-slate-400 font-medium">Tổng số trạm</div>
+                  <div className="text-lg font-bold text-[#1a73e8]">{bienDongSummary.total} <span className="text-xs font-normal text-slate-500">trạm</span></div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 overflow-auto">
+              <div className="grid grid-cols-3 gap-4 p-4 border-b bg-emerald-50/20">
+                <div className="bg-white p-3 rounded-lg border border-emerald-100 shadow-xs">
+                  <div className="text-[11px] font-medium text-slate-500">Đã cập nhật</div>
+                  <div className="text-base font-bold text-emerald-600 flex items-baseline gap-1 mt-0.5">
+                    {bienDongSummary.updated}
+                    <span className="text-[11px] font-normal text-emerald-500">
+                      ({bienDongSummary.total > 0 ? Math.round((bienDongSummary.updated / bienDongSummary.total) * 100) : 0}%)
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-orange-100 shadow-xs">
+                  <div className="text-[11px] font-medium text-slate-500">Chưa cập nhật</div>
+                  <div className="text-base font-bold text-orange-500 flex items-baseline gap-1 mt-0.5">
+                    {bienDongSummary.remaining}
+                    <span className="text-[11px] font-normal text-orange-400">
+                      ({bienDongSummary.total > 0 ? Math.round((bienDongSummary.remaining / bienDongSummary.total) * 100) : 0}%)
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-xs flex flex-col justify-center">
+                  <div className="text-[11px] font-medium text-slate-500">Tỷ lệ hoàn thành</div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-2">
+                    <div 
+                      className="bg-emerald-500 h-full transition-all duration-500" 
+                      style={{ width: `${bienDongSummary.total > 0 ? (bienDongSummary.updated / bienDongSummary.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto max-h-[160px]">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold uppercase text-[10px] tracking-wider border-b sticky top-0">
+                    <tr>
+                      <th className="py-2 px-4 bg-slate-50">Đơn vị Điện lực</th>
+                      <th className="py-2 px-4 text-center bg-slate-50">Tổng số trạm</th>
+                      <th className="py-2 px-4 text-center bg-slate-50">Đã giải trình</th>
+                      <th className="py-2 px-4 text-center bg-slate-50">Chưa giải trình</th>
+                      <th className="py-2 px-4 text-right bg-slate-50">Tỷ lệ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {bienDongSummary.list.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          Không có dữ liệu cho bộ lọc đang chọn
+                        </td>
+                      </tr>
+                    ) : (
+                      bienDongSummary.list.map((item, idx) => {
+                        const pct = item.total > 0 ? Math.round((item.updated / item.total) * 100) : 0;
+                        const isSelected = selectedBDUnit === item.unit;
+                        return (
+                          <tr key={idx} className={cn(
+                            "hover:bg-slate-50/80 transition-colors cursor-pointer",
+                            isSelected ? "bg-blue-50/40 font-medium" : ""
+                          )} onClick={() => setSelectedBDUnit(isSelected ? "all" : item.unit)}>
+                            <td className="py-2 px-4 text-slate-700">
+                              {isSelected ? (
+                                <span className="flex items-center gap-1.5 font-semibold text-blue-600">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                  {item.unit}
+                                </span>
+                              ) : (
+                                item.unit
+                              )}
+                            </td>
+                            <td className="py-2 px-4 text-center font-semibold text-slate-600">{item.total}</td>
+                            <td className="py-2 px-4 text-center text-emerald-600 font-semibold">{item.updated}</td>
+                            <td className="py-2 px-4 text-center text-orange-500 font-semibold">{item.remaining}</td>
+                            <td className="py-2 px-4 text-right font-semibold text-slate-600">{pct}%</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Graphical Visualization (Chart) */}
+          <Card className="xl:col-span-1 shadow-sm border border-slate-100 bg-white flex flex-col overflow-hidden">
+            <CardHeader className="border-b pb-4 bg-slate-50/50">
+              <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <BarChartIcon className="w-4 h-4 text-blue-600" />
+                Đồ thị tiến độ theo đơn vị
+              </CardTitle>
+              <CardDescription className="text-xs mt-1 text-slate-500">
+                Tỷ lệ đã hoàn thành và chưa hoàn thành giải trình
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 flex-1 flex flex-col justify-center min-h-[220px]">
+              {bienDongSummary.list.length === 0 ? (
+                <div className="text-center text-slate-400 text-xs py-10">Không có dữ liệu đồ thị</div>
+              ) : (
+                <div className="w-full h-[210px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={bienDongSummary.list}
+                      margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
+                      stackOffset="expand"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="unit" 
+                        tick={{ fill: '#64748b', fontSize: 10 }}
+                        tickFormatter={(v) => {
+                          return String(v).replace("Điện lực ", "").replace("Công ty Điện lực ", "PC ");
+                        }}
+                      />
+                      <YAxis tickFormatter={(v) => `${Math.round(v * 100)}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
+                      <Tooltip 
+                        formatter={(value, name, props) => {
+                          const rawVal = Number(value);
+                          const count = name === "Đã giải trình" ? props.payload.updated : props.payload.remaining;
+                          return [`${count} trạm (${Math.round(rawVal * 100)}%)`, name];
+                        }}
+                        contentStyle={{ fontSize: '11px', borderRadius: '6px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
+                      />
+                      <Legend 
+                        verticalAlign="bottom" 
+                        height={24} 
+                        iconSize={10} 
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: '11px' }}
+                      />
+                      <Bar dataKey="updated" name="Đã giải trình" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="remaining" name="Chưa giải trình" stackId="a" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Update Form */}
+          <Card className="lg:col-span-1 shadow-md border-border bg-white flex flex-col">
+            <CardHeader>
+              <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-[#1a73e8]" />
+                Giải trình biến động
+              </CardTitle>
+              <CardDescription className="text-xs text-emerald-800 font-semibold">
+                So sánh biến động giá trị TTĐN% tháng N so với giá trị TTĐN % lũy kế 12 tháng đến tháng N-1
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 flex-1">
+              <form onSubmit={handleUpdateBD} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-slate-600">Đơn vị</Label>
+                  <Select value={selectedBDUnit} onValueChange={(val) => { setSelectedBDUnit(val); setSelectedBDStation("all"); }}>
+                    <SelectTrigger className="bg-white text-xs h-9">
+                      <SelectValue placeholder="Tất cả các đơn vị" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="all" className="text-xs font-semibold text-blue-600">Tất cả các đơn vị</SelectItem>
+                      {bienDongOptions.units.map(unit => (
+                        <SelectItem key={unit} value={unit} className="text-xs">{unit}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5 flex flex-col">
+                  <Label className="text-xs font-semibold text-slate-600">Tên trạm biến áp</Label>
+                  <Popover open={openBdtbaSelect} onOpenChange={setOpenBdtbaSelect}>
+                    <PopoverTrigger 
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-between bg-white text-xs h-9 font-normal px-3"
+                        >
+                          <span className="truncate">
+                            {selectedBDStation === "all" || !selectedBDStation ? "Tất cả các trạm" : selectedBDStation}
+                          </span>
+                          <Search className="ml-2 h-4 w-4 opacity-50 shrink-0" />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent className="w-[300px] p-0 bg-white shadow-xl z-50 overflow-hidden" align="start">
+                      <Command>
+                        <CommandInput placeholder="Tìm tên trạm..." className="h-9" />
+                        <CommandList className="max-h-[300px]">
+                          <CommandEmpty>Không tìm thấy trạm.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="Tất cả các trạm tat ca all"
+                              onSelect={() => {
+                                setSelectedBDStation("all");
+                                setOpenBdtbaSelect(false);
+                              }}
+                              className="text-[12px] cursor-pointer font-medium text-blue-600"
+                            >
+                              Tất cả các trạm
+                            </CommandItem>
+                            {bienDongOptions.stations.map(station => (
+                              <CommandItem
+                                key={station}
+                                value={station}
+                                onSelect={() => {
+                                  setSelectedBDStation(station);
+                                  setOpenBdtbaSelect(false);
+                                }}
+                                className="text-[12px] cursor-pointer"
+                              >
+                                {station}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Tháng</Label>
+                    <Select value={selectedBDMonth} onValueChange={setSelectedBDMonth}>
+                      <SelectTrigger className="bg-white text-xs h-9">
+                        <SelectValue placeholder="Tất cả" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        <SelectItem value="all" className="text-xs font-semibold text-blue-600">Tất cả</SelectItem>
+                        {bienDongOptions.months.map(m => (
+                          <SelectItem key={m} value={m} className="text-xs">Tháng {m}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Năm</Label>
+                    <Select value={selectedBDYear} onValueChange={setSelectedBDYear}>
+                      <SelectTrigger className="bg-white text-xs h-9">
+                        <SelectValue placeholder="Tất cả" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        <SelectItem value="all" className="text-xs font-semibold text-blue-600">Tất cả</SelectItem>
+                        {bienDongOptions.years.map(y => (
+                          <SelectItem key={y} value={y} className="text-xs">{y}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-slate-600">Nội dung giải trình</Label>
+                  <Textarea 
+                    value={bdGiaiTrinh} 
+                    onChange={(e) => setBdGiaiTrinh(e.target.value)}
+                    disabled={isBDRowLocked}
+                    placeholder={isBDRowLocked ? "Nội dung giải trình đã được nhập và khóa không cho chỉnh sửa." : "Nhập nội dung giải trình biến động tổn thất..."} 
+                    rows={5}
+                    className={cn(
+                      "bg-white text-xs resize-none",
+                      isBDRowLocked ? "bg-slate-50 text-emerald-700 font-medium cursor-not-allowed border-emerald-100" : ""
+                    )}
+                  />
+                  {isBDRowLocked && (
+                    <div className="text-emerald-700 text-[11px] font-medium flex items-center gap-1.5 bg-emerald-50/50 p-2 rounded border border-emerald-100 mt-1.5 animate-fadeIn">
+                      <Lock className="w-3.5 h-3.5 shrink-0" />
+                      Dòng này đã nhập giải trình và bị khóa không cho chỉnh sửa
+                    </div>
+                  )}
+                </div>
+
+                <Button 
+                  type="submit" 
+                  disabled={submittingBD || isBDRowLocked}
+                  className={cn(
+                    "w-full font-semibold text-xs h-9 transition-all",
+                    isBDRowLocked 
+                      ? "bg-slate-100 text-slate-400 hover:bg-slate-100 cursor-not-allowed" 
+                      : "bg-[#1a73e8] hover:bg-[#1557b0] text-white"
+                  )}
+                >
+                  {submittingBD ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" />
+                      Đang cập nhật...
+                    </>
+                  ) : isBDRowLocked ? (
+                    <span className="flex items-center justify-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5" />
+                      Đã khóa (Đã có giải trình)
+                    </span>
+                  ) : "Cập nhật giải trình"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Table list */}
+          <Card className="lg:col-span-3 shadow-md border-border bg-white flex flex-col overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+              <div>
+                <CardTitle className="text-base font-bold text-slate-800">
+                  Danh sách TBA cc có TTĐN% biến động
+                </CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  Click vào bất kỳ dòng nào để chọn nhanh trạm biến áp cần giải trình.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-[12px] bg-white border-border text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                  onClick={() => exportToExcel(bienDongSheet[0] || [], filteredBienDongRows, "Danh_sach_TBA_bien_dong")}
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  Xuất Excel
+                </Button>
+                <div className="text-xs font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md h-8 flex items-center">
+                  Hiển thị: {filteredBienDongRows.length} / {bienDongSheet.length > 0 ? bienDongSheet.length - 1 : 0} dòng
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 overflow-auto max-h-[600px]">
+              <table className="w-full border-separate border-spacing-0 text-left table-auto">
+                <thead>
+                  <tr className="bg-slate-50 border-b">
+                    <th className="py-2.5 px-3 border-b border-r text-center font-semibold text-slate-700 text-xs bg-slate-50 sticky top-0 z-10 w-12">STT</th>
+                    {bienDongSheet[0]?.slice(0, 12).map((h, i) => (
+                      <th key={i} className="py-2.5 px-3 border-b border-r font-semibold text-slate-700 text-xs bg-slate-50 sticky top-0 z-10 whitespace-nowrap">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredBienDongRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={13} className="h-40 text-center text-slate-400 text-xs">
+                        Không có dữ liệu trùng khớp với bộ lọc
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredBienDongRows.map((row, idx) => {
+                      const { colDL, colTram, colThang, colNam } = bienDongOptions;
+                      const isSelected = 
+                        selectedBDUnit === String(row[colDL] || "").trim() && 
+                        selectedBDStation === String(row[colTram] || "").trim() && 
+                        selectedBDMonth === String(row[colThang] || "").trim() && 
+                        selectedBDYear === String(row[colNam] || "").trim();
+
+                      const header = bienDongSheet[0] || [];
+                      const idxGiaiTrinh = header.findIndex(h => {
+                        const nh = normalizeString(String(h || ""));
+                        return nh.includes("giai trinh");
+                      });
+                      const colGiaiTrinh = idxGiaiTrinh !== -1 ? idxGiaiTrinh : 9;
+                      const hasGiaiTrinh = String(row[colGiaiTrinh] || "").trim().length > 0;
+
+                      return (
+                        <tr 
+                          key={idx} 
+                          onClick={() => handleSelectBDRow(row)}
+                          className={cn(
+                            "cursor-pointer transition-colors border-b text-[11px]",
+                            isSelected ? "bg-blue-50/70 hover:bg-blue-50" : (hasGiaiTrinh ? "bg-emerald-50/10 hover:bg-emerald-50/20" : "bg-white hover:bg-slate-50")
+                          )}
+                        >
+                          <td className={cn(
+                            "py-2 px-3 border-b border-r text-center font-mono transition-colors",
+                            hasGiaiTrinh ? "text-emerald-600 font-semibold" : "text-slate-400"
+                          )}>
+                            {idx + 1}
+                          </td>
+                          {row.slice(0, 12).map((cell, cellIdx) => {
+                            const isGiaiTrinhCol = cellIdx === 9;
+                            const isTimestampCol = cellIdx === 10;
+                            return (
+                              <td 
+                                key={cellIdx} 
+                                className={cn(
+                                  "py-2 px-3 border-b border-r max-w-[200px] truncate transition-colors",
+                                  hasGiaiTrinh 
+                                    ? (isGiaiTrinhCol ? "text-emerald-700 font-semibold bg-emerald-50/20" : "text-emerald-600 font-medium")
+                                    : (isGiaiTrinhCol ? "text-blue-600 font-medium bg-blue-50/10" : "text-slate-700"),
+                                  isTimestampCol ? (hasGiaiTrinh ? "text-emerald-700 font-mono" : "text-emerald-600 font-mono") : "",
+                                  cellIdx === 4 ? "text-right font-semibold" : ""
+                                )}
+                                title={String(cell || "")}
+                              >
+                                {String(cell || "")}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </div>
       </section>
     ) : activeTab === "bao-cao" ? (
       <section className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto w-full bg-slate-50">

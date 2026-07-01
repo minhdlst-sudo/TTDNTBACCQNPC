@@ -213,6 +213,175 @@ app.get("/api/sheets/tba", async (req, res) => {
   }
 });
 
+app.get("/api/sheets/bien-dong", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    let response;
+    let actualSheetName = "bien dong";
+    try {
+      response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "'bien dong'!A:AZ",
+      });
+    } catch (err) {
+      console.log("Failed fetching with lowercase 'bien dong', trying 'Bien dong'...");
+      response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "'Bien dong'!A:AZ",
+      });
+      actualSheetName = "Bien dong";
+    }
+    const values = response.data.values || [];
+    console.log(`Fetched ${values.length} rows from '${actualSheetName}' sheet at ${new Date().toISOString()}`);
+    res.json(values);
+  } catch (error: any) {
+    console.error("Error fetching 'bien dong' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/sheets/bien-dong", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const { dienLuc, tenTram, thang, nam, giaiTrinh } = req.body;
+
+    if (!dienLuc || !tenTram || !thang || !nam) {
+      return res.status(400).json({ error: "Missing required fields (dienLuc, tenTram, thang, nam)" });
+    }
+
+    let response;
+    let actualSheetName = "bien dong";
+    try {
+      response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "'bien dong'!A:AZ",
+      });
+    } catch (err) {
+      response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "'Bien dong'!A:AZ",
+      });
+      actualSheetName = "Bien dong";
+    }
+
+    const values = response.data.values || [];
+    if (values.length === 0) {
+      return res.status(404).json({ error: "Sheet is empty" });
+    }
+
+    const header = values[0];
+    const idxDL = header.findIndex(h => {
+      const nh = h ? h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d") : "";
+      return nh.includes("don vi") || nh.includes("dien luc") || nh === "dl";
+    });
+    const idxMaTram = header.findIndex(h => {
+      const nh = h ? h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d") : "";
+      return nh.includes("ma tram");
+    });
+    const idxTenTram = header.findIndex(h => {
+      const nh = h ? h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d") : "";
+      return nh.includes("ten tram");
+    });
+    const idxThang = header.findIndex(h => {
+      const nh = h ? h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d") : "";
+      return nh === "thang" || nh === "thang lk";
+    });
+    const idxNam = header.findIndex(h => {
+      const nh = h ? h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d") : "";
+      return nh === "nam";
+    });
+
+    const colDL = idxDL !== -1 ? idxDL : 0;
+    const colMaTram = idxMaTram !== -1 ? idxMaTram : 1;
+    const colTenTram = idxTenTram !== -1 ? idxTenTram : 2;
+    const colThang = idxThang !== -1 ? idxThang : 8;
+    const colNam = idxNam !== -1 ? idxNam : 6;
+
+    const normalizeText = (s: string) => {
+      return String(s || "")
+        .toLowerCase()
+        .replace(/đ/g, "d")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const cleanCompany = (s: string) => {
+      return normalizeText(s)
+        .replace(/^dien luc\s+/, "")
+        .replace(/^pc\s+/, "")
+        .replace(/^p\s+/, "")
+        .replace(/^cong ty\s+/, "")
+        .trim();
+    };
+
+    const extractDigits = (s: string) => {
+      return String(s || "").replace(/\D/g, "").trim();
+    };
+
+    const searchDL = cleanCompany(dienLuc);
+    const searchTram = normalizeText(tenTram);
+    const searchThangNum = extractDigits(thang);
+    const searchNamNum = extractDigits(nam);
+
+    let targetRowIndex = -1;
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (!row || row.length === 0) continue;
+
+      const rDL = cleanCompany(row[colDL] || "");
+      const rMa = normalizeText(row[colMaTram] || "");
+      const rTen = normalizeText(row[colTenTram] || "");
+      const rThang = extractDigits(row[colThang] || "");
+      const rThangLK = idxThang !== -1 ? extractDigits(row[5] || "") : "";
+      const rNam = extractDigits(row[colNam] || "");
+
+      const isDLMatch = rDL === searchDL || rDL.includes(searchDL) || searchDL.includes(rDL);
+      const isTramMatch = rMa === searchTram || rTen === searchTram || rMa.includes(searchTram) || rTen.includes(searchTram) || searchTram.includes(rMa) || searchTram.includes(rTen);
+      const isThangMatch = rThang === searchThangNum || rThangLK === searchThangNum;
+      const isNamMatch = rNam === searchNamNum;
+
+      if (isDLMatch && isTramMatch && isThangMatch && isNamMatch) {
+        targetRowIndex = i;
+        break;
+      }
+    }
+
+    if (targetRowIndex === -1) {
+      return res.status(404).json({ error: `Không tìm thấy dòng khớp với đơn vị: ${dienLuc}, trạm: ${tenTram}, tháng: ${thang}, năm: ${nam}` });
+    }
+
+    const rowNumber = targetRowIndex + 1;
+    const range = `'${actualSheetName}'!J${rowNumber}:K${rowNumber}`;
+
+    const now = new Date();
+    const timestamp = now.toLocaleString("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: range,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[giaiTrinh || "", timestamp]],
+      },
+    });
+
+    res.json({ success: true, rowIndex: targetRowIndex });
+  } catch (error: any) {
+    console.error("Error updating 'bien dong' sheet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/api/sheets/tba-real", async (req, res) => {
   try {
     const sheets = getSheetsClient();
