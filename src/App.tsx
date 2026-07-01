@@ -2917,6 +2917,15 @@ export default function App() {
         <div className="flex items-center justify-center md:flex-1">
           <div className="flex bg-white/15 p-1 rounded-lg w-full sm:w-auto overflow-x-auto max-w-full sm:max-w-none no-scrollbar">
             <button 
+              onClick={() => setActiveTab("bien-dong")}
+              className={cn(
+                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all whitespace-nowrap",
+                activeTab === "bien-dong" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
+              )}
+            >
+              Cảnh báo
+            </button>
+            <button 
               onClick={() => setActiveTab("cap-nhat")}
               className={cn(
                 "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all",
@@ -2924,15 +2933,6 @@ export default function App() {
               )}
             >
               Cập nhật
-            </button>
-            <button 
-              onClick={() => setActiveTab("bien-dong")}
-              className={cn(
-                "flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[12px] md:text-[13px] font-semibold transition-all whitespace-nowrap",
-                activeTab === "bien-dong" ? "bg-white text-[#1a73e8] shadow-sm" : "text-white/70 hover:text-white"
-              )}
-            >
-              Biến động
             </button>
             <button 
               onClick={() => setActiveTab("bao-cao")}
